@@ -465,12 +465,12 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
                       {logoutAllId === app.appId ? "…" : "🔓 Logout All"}
                     </button>
                     <button onClick={() => toggleStatus(app)} disabled={togglingId === app.appId}
-                      style={{ padding: "7px 13px", borderRadius: 8, background: app.status === "active" ? T.yellow + "22" : T.green + "22", border: "none", color: app.status === "active" ? T.yellow : T.green, fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
-                      {togglingId === app.appId ? "…" : app.status === "active" ? "Disable" : "Enable"}
+                      style={{ padding: "10px 22px", borderRadius: 10, background: app.status === "active" ? T.yellow + "22" : T.green + "22", border: `1.5px solid ${app.status === "active" ? T.yellow : T.green}`, color: app.status === "active" ? T.yellow : T.green, fontWeight: 800, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {togglingId === app.appId ? "…" : app.status === "active" ? "⏸ Disable" : "▶ Start"}
                     </button>
                     <button onClick={() => deleteApp(app)} disabled={deletingId === app.appId}
-                      style={{ padding: "7px 13px", borderRadius: 8, background: T.red + "22", border: "none", color: T.red, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                      {deletingId === app.appId ? "…" : "🗑️"}
+                      style={{ padding: "10px 22px", borderRadius: 10, background: T.red + "22", border: `1.5px solid ${T.red}`, color: T.red, fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                      {deletingId === app.appId ? "…" : "🗑️ Delete"}
                     </button>
                   </div>
                 </div>
@@ -521,3 +521,4 @@ export default function MainAdminPanel() {
   if (!masterPin) return <MasterLogin onAuth={handleAuth} />;
   return <Dashboard masterPin={masterPin} onLogout={handleLogout} onPinChanged={handlePinChanged} />;
 }
+
