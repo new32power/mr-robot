@@ -28,7 +28,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // ─── API key auth (skip POST, OPTIONS, /api/healthz) ───────────────────────
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.method === "POST" || req.method === "OPTIONS" || req.path === "/api/healthz") {
+  if (req.method === "POST" || req.method === "PATCH" || req.method === "OPTIONS" || req.path === "/api/healthz") {
     return next();
   }
   const apiSecret = process.env.API_SECRET ?? "";

