@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 
+const _API_KEY = import.meta.env.VITE_API_SECRET ?? "";
+function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+  const h = new Headers(opts.headers);
+  if (_API_KEY) h.set("x-api-key", _API_KEY);
+  return fetch(url, { ...opts, headers: h });
+}
+
 const T = {
   bg: "#0f172a", card: "#1e293b", border: "#334155",
   text: "#f1f5f9", muted: "#94a3b8", accent: "#6366f1",
@@ -28,7 +35,7 @@ function MasterLogin({ onAuth }: { onAuth: (pin: string) => void }) {
     e.preventDefault();
     setErr(""); setLoading(true);
     try {
-      const r = await fetch("/api/admin/verify-master-pin", {
+      const r = await apiFetch("/api/admin/verify-master-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
@@ -85,7 +92,7 @@ function CreateAppModal({ masterPin, onClose, onCreated }: { masterPin: string; 
     if (pin.length < 4) { setErr("PIN must be at least 4 characters"); return; }
     setErr(""); setLoading(true);
     try {
-      const r = await fetch("/api/master/apps", {
+      const r = await apiFetch("/api/master/apps", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-master-pin": masterPin },
         body: JSON.stringify({ appId, name: name.trim(), pin }),
@@ -151,7 +158,7 @@ function ChangePinModal({ masterPin, onClose, onChanged }: { masterPin: string; 
     if (newPin !== newPin2) { setErr("PINs do not match"); return; }
     setErr(""); setLoading(true);
     try {
-      const r = await fetch("/api/admin/master-pin", {
+      const r = await apiFetch("/api/admin/master-pin", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPin, newPin }),
@@ -208,7 +215,7 @@ function EditAppModal({ app, masterPin, onClose, onUpdated }: { app: App; master
     if (pin.length < 4) { setErr("PIN must be at least 4 characters"); return; }
     setErr(""); setLoading(true);
     try {
-      const r = await fetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
+      const r = await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-master-pin": masterPin },
         body: JSON.stringify({ name: name.trim(), pin, loginLimit }),
@@ -288,7 +295,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
 
   const fetchApps = useCallback(async () => {
     try {
-      const r = await fetch("/api/master/apps", { headers: { "x-master-pin": masterPin } });
+      const r = await apiFetch("/api/master/apps", { headers: { "x-master-pin": masterPin } });
       if (r.status === 401) { onLogout(); return; }
       if (!r.ok) return;
       setAppList(await r.json() as App[]);
@@ -301,7 +308,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     setTogglingId(app.appId);
     const newStatus = app.status === "active" ? "disabled" : "active";
     try {
-      await fetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
+      await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-master-pin": masterPin },
         body: JSON.stringify({ status: newStatus }),
@@ -314,7 +321,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     if (!confirm(`Delete "${app.name}"?\nThis cannot be undone.`)) return;
     setDeletingId(app.appId);
     try {
-      await fetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
+      await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, {
         method: "DELETE",
         headers: { "x-master-pin": masterPin },
       });
@@ -326,7 +333,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     if (!confirm(`"${app.name}" ke sabhi logged-in users ko logout karein?`)) return;
     setLogoutAllId(app.appId);
     try {
-      await fetch(`/api/admin/sessions?appId=${encodeURIComponent(app.appId)}`, { method: "DELETE" });
+      await apiFetch(`/api/admin/sessions?appId=${encodeURIComponent(app.appId)}`, { method: "DELETE" });
       setAppList(prev => prev.map(a => a.appId === app.appId ? { ...a, activeSessions: 0 } : a));
     } catch { /* ignore */ } finally { setLogoutAllId(null); }
   }
