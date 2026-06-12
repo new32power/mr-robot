@@ -241,27 +241,38 @@ const MsgCard = React.memo(function MsgCard({
 }) {
   const t = useTheme();
   const [showForm, setShowForm] = useState(false);
+  const [deletedToast, setDeletedToast] = useState(false);
 
   function handleCardClick() {
-    if (cardClickable && device) onOpen?.(device, String(msg.id));
+    if (!cardClickable) return;
+    if (device) {
+      onOpen?.(device, String(msg.id));
+    } else {
+      setDeletedToast(true);
+      setTimeout(() => setDeletedToast(false), 3000);
+    }
   }
 
   return (
-    <div id={`msg-${msg.id}`} style={{
-      borderRadius: 8, overflow: "hidden", border: `1px solid ${t.cardB}`,
+    <div id={`msg-${msg.id}`} style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.cardB}`,
       // GPU skips offscreen card paint/layout → buttery scroll with thousands of cards.
       // `auto 140px` = remember each card's last-rendered height so pixel-scroll restore stays accurate.
       contentVisibility: "auto",
       containIntrinsicSize: "auto 140px",
     } as React.CSSProperties}>
+      {deletedToast && (
+        <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 10, background: "#1e293b", color: "#f87171", fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 20, border: "1px solid #f87171", whiteSpace: "nowrap", pointerEvents: "none" }}>
+          ⚠️ Yeh device delete ho chuka hai
+        </div>
+      )}
       <div
-        onClick={cardClickable && device ? handleCardClick : undefined}
+        onClick={cardClickable ? handleCardClick : undefined}
         style={{
           background: t.card, padding: "10px 14px",
-          cursor: cardClickable && device ? "pointer" : "default",
+          cursor: cardClickable ? "pointer" : "default",
           transition: "box-shadow 0.15s",
         }}
-        onMouseEnter={e => { if (cardClickable && device) (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 8px rgba(99,102,241,0.13)"; }}
+        onMouseEnter={e => { if (cardClickable) (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 8px rgba(99,102,241,0.13)"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
       >
         {/* Header row */}
