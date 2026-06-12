@@ -2246,6 +2246,8 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout }: {
                 );
               })
         }
+      </div>
+
       {/* ── Delete All Messages ── */}
       <DeleteAllMessagesSection appId={appId} onDeleted={() => {}} />
 
