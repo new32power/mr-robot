@@ -2271,97 +2271,196 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout }: {
 /* ════════════════════════════════════════
    DELETE ALL MESSAGES SECTION
 ════════════════════════════════════════ */
+function fmtSecs(s: number): string {
+  if (s < 60) return `${Math.ceil(s)}s`;
+  const m = Math.floor(s / 60), rem = Math.ceil(s % 60);
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+}
+
 function DeleteAllMessagesSection({ appId, onDeleted }: { appId: string; onDeleted: () => void }) {
   const t = useTheme();
   const [showDialog, setShowDialog] = useState(false);
   const [pin, setPin] = useState("");
   const [pinErr, setPinErr] = useState("");
-  const [state, setState] = useState<"idle" | "verifying" | "deleting" | "done" | "err">("idle");
+  const [phase, setPhase] = useState<"idle" | "verifying" | "fetching" | "deleting" | "done" | "err">("idle");
   const [resultMsg, setResultMsg] = useState("");
+  const [total, setTotal] = useState(0);
+  const [deleted, setDeleted] = useState(0);
+  const startTimeRef = useRef<number>(0);
+  const cancelRef = useRef(false);
 
-  function openDialog() { setShowDialog(true); setPin(""); setPinErr(""); setState("idle"); setResultMsg(""); }
-  function closeDialog() { setShowDialog(false); setPin(""); setPinErr(""); setState("idle"); setResultMsg(""); }
+  function openDialog() {
+    cancelRef.current = false;
+    setShowDialog(true); setPin(""); setPinErr(""); setPhase("idle"); setResultMsg(""); setTotal(0); setDeleted(0);
+  }
+  function closeDialog() {
+    cancelRef.current = true;
+    setShowDialog(false); setPin(""); setPinErr(""); setPhase("idle"); setResultMsg(""); setTotal(0); setDeleted(0);
+  }
 
   async function handleConfirm() {
     if (!pin.trim()) { setPinErr("Enter your PIN."); return; }
-    setState("verifying"); setPinErr("");
+    setPhase("verifying"); setPinErr(""); cancelRef.current = false;
     try {
+      // Step 1: Verify PIN
       const vr = await apiFetch(`/api/apps/${encodeURIComponent(appId)}/verify-pin`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
       });
-      if (!vr.ok) { setState("idle"); setPinErr("Wrong PIN. Try again."); setPin(""); return; }
-      setState("deleting");
-      const dr = await apiFetch(`/api/messages?appId=${encodeURIComponent(appId)}`, { method: "DELETE" });
-      if (!dr.ok) { setState("err"); setResultMsg(`Failed (${dr.status}). Try again.`); return; }
-      setState("done"); setResultMsg("All messages deleted successfully.");
+      if (!vr.ok) { setPhase("idle"); setPinErr("Wrong PIN. Try again."); setPin(""); return; }
+
+      // Step 2: Fetch all message IDs for THIS appId only
+      setPhase("fetching");
+      const PAGE = 5000;
+      let allIds: number[] = [];
+      let offset = 0;
+      while (true) {
+        if (cancelRef.current) return;
+        const r = await apiFetch(`/api/messages?appId=${encodeURIComponent(appId)}&limit=${PAGE}&offset=${offset}`, { headers: { "x-silent": "1" } });
+        if (!r.ok) { setPhase("err"); setResultMsg(`Failed to load messages (${r.status}).`); return; }
+        const batch: { id: number }[] = await r.json();
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        allIds = [...allIds, ...batch.map(m => m.id)];
+        if (batch.length < PAGE) break;
+        offset += batch.length;
+      }
+
+      if (allIds.length === 0) {
+        setPhase("done"); setResultMsg("No messages found for this App ID.");
+        setTimeout(() => closeDialog(), 2500); return;
+      }
+
+      // Step 3: Delete one-by-one in batches with progress tracking
+      setTotal(allIds.length); setDeleted(0); setPhase("deleting");
+      startTimeRef.current = Date.now();
+      const BATCH = 10;
+      let done = 0;
+      for (let i = 0; i < allIds.length; i += BATCH) {
+        if (cancelRef.current) return;
+        const batch = allIds.slice(i, i + BATCH);
+        await Promise.allSettled(batch.map(id => apiFetch(`/api/messages/${id}`, { method: "DELETE" })));
+        done += batch.length;
+        setDeleted(Math.min(done, allIds.length));
+      }
+
+      setPhase("done"); setResultMsg(`${allIds.length} messages deleted successfully.`);
       onDeleted();
-      setTimeout(() => closeDialog(), 2500);
-    } catch { setState("err"); setResultMsg("Network error. Try again."); }
+      setTimeout(() => closeDialog(), 4000);
+    } catch { setPhase("err"); setResultMsg("Network error. Try again."); }
   }
+
+  const pct = total > 0 ? Math.round((deleted / total) * 100) : 0;
+  const elapsedSec = phase === "deleting" && startTimeRef.current > 0 ? (Date.now() - startTimeRef.current) / 1000 : 0;
+  const speed = elapsedSec > 0 ? deleted / elapsedSec : 0;
+  const etaSec = speed > 0 && deleted < total ? (total - deleted) / speed : null;
+
+  const busy = phase === "verifying" || phase === "fetching" || phase === "deleting";
 
   return (
     <>
       <div style={{ background: t.card, borderRadius: 10, border: "1.5px solid #f87171", overflow: "hidden" }}>
-        <div style={{ padding: "10px 14px", borderBottom: `1px solid #f87171`, background: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid #f87171", background: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>🗑️</span>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#dc2626" }}>Danger Zone</span>
         </div>
         <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6 }}>
-            Delete all messages received by this App ID. This action is permanent and cannot be undone.
+            Permanently delete <strong>all messages</strong> for this App ID only. Other app data (devices, form data) will not be affected.
           </div>
-          <button
-            onClick={openDialog}
-            style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #ef4444", background: "#fef2f2", color: "#dc2626", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-          >
+          <button onClick={openDialog} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #ef4444", background: "#fef2f2", color: "#dc2626", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             🗑️ Delete All Messages of This App ID
           </button>
         </div>
       </div>
 
       {showDialog && createPortal(
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-          onClick={e => { if (e.target === e.currentTarget) closeDialog(); }}
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget && !busy) closeDialog(); }}
         >
-          <div style={{ background: t.card, borderRadius: 14, width: "100%", maxWidth: 360, padding: 24, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, color: "#dc2626" }}>⚠️ Delete All Messages</div>
+          <div style={{ background: t.card, borderRadius: 14, width: "100%", maxWidth: 400, padding: 24, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 40px rgba(0,0,0,0.35)" }}>
+
+            {/* Header */}
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: "#dc2626", marginBottom: 6 }}>⚠️ Delete All Messages</div>
               <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6 }}>
-                This will permanently delete <strong>all messages</strong> for App ID <span style={{ fontFamily: "monospace", color: t.txt }}>{appId}</span>. Enter your PIN to confirm.
+                Only messages for <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#6366f1" }}>{appId}</span> will be deleted. Devices, form data, and sessions are <strong>not affected</strong>.
               </div>
             </div>
 
-            {state === "done" ? (
-              <div style={{ textAlign: "center", color: "#16a34a", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>✅ {resultMsg}</div>
-            ) : state === "err" ? (
-              <div style={{ textAlign: "center", color: "#dc2626", fontSize: 12, padding: "4px 0" }}>❌ {resultMsg}</div>
-            ) : null}
+            {/* PIN input — shown only when idle */}
+            {phase === "idle" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.txt2 }}>Confirm with your PIN</label>
+                <input
+                  type="password" value={pin}
+                  onChange={e => { setPin(e.target.value); setPinErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && void handleConfirm()}
+                  placeholder="Enter PIN" autoFocus
+                  style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${pinErr ? "#ef4444" : t.cardB}`, background: t.bg, color: t.txt, fontSize: 14, outline: "none", letterSpacing: 3 }}
+                />
+                {pinErr && <div style={{ fontSize: 11, color: "#ef4444" }}>{pinErr}</div>}
+              </div>
+            )}
 
-            {state !== "done" && (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: t.txt2 }}>PIN</label>
-                  <input
-                    type="password"
-                    value={pin}
-                    onChange={e => { setPin(e.target.value); setPinErr(""); }}
-                    onKeyDown={e => e.key === "Enter" && void handleConfirm()}
-                    placeholder="Enter your PIN"
-                    autoFocus
-                    style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${pinErr ? "#ef4444" : t.cardB}`, background: t.bg, color: t.txt, fontSize: 14, outline: "none", letterSpacing: 2 }}
-                  />
-                  {pinErr && <div style={{ fontSize: 11, color: "#ef4444" }}>{pinErr}</div>}
+            {/* Verifying PIN */}
+            {phase === "verifying" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                <CircularLoader size={20} color="#6366f1" />
+                <span style={{ fontSize: 13, color: t.txt2 }}>Verifying PIN…</span>
+              </div>
+            )}
+
+            {/* Fetching messages */}
+            {phase === "fetching" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                <CircularLoader size={20} color="#6366f1" />
+                <span style={{ fontSize: 13, color: t.txt2 }}>Loading message list for <span style={{ fontFamily: "monospace", color: "#6366f1" }}>{appId}</span>…</span>
+              </div>
+            )}
+
+            {/* Deleting with progress */}
+            {phase === "deleting" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {/* Stats row */}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: t.txt2, fontWeight: 600 }}>
+                  <span>Deleted: <span style={{ color: "#ef4444", fontWeight: 800 }}>{deleted.toLocaleString()}</span> / <span style={{ color: t.txt }}>{total.toLocaleString()}</span></span>
+                  <span>{pct}%</span>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={closeDialog} disabled={state === "verifying" || state === "deleting"} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${t.cardB}`, background: t.bg, color: t.txt2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                  <button onClick={() => void handleConfirm()} disabled={state === "verifying" || state === "deleting"} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: state === "verifying" || state === "deleting" ? "#fca5a5" : "#ef4444", color: "#fff", fontSize: 13, fontWeight: 700, cursor: state === "verifying" || state === "deleting" ? "wait" : "pointer" }}>
-                    {state === "verifying" ? "Verifying…" : state === "deleting" ? "Deleting…" : "Delete All"}
-                  </button>
+                {/* Progress bar */}
+                <div style={{ height: 10, borderRadius: 99, background: t.hdrB, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 99, background: "linear-gradient(90deg,#ef4444,#dc2626)", width: `${pct}%`, transition: "width 0.3s ease" }} />
                 </div>
-              </>
+                {/* ETA + speed */}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.muted }}>
+                  <span>Speed: ~{speed > 0 ? Math.round(speed) : "—"} msg/s</span>
+                  {etaSec !== null
+                    ? <span>Est. remaining: <strong style={{ color: t.txt2 }}>{fmtSecs(etaSec)}</strong></span>
+                    : <span>Calculating…</span>
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Done */}
+            {phase === "done" && (
+              <div style={{ textAlign: "center", color: "#16a34a", fontWeight: 700, fontSize: 13, padding: "8px 0" }}>✅ {resultMsg}</div>
+            )}
+
+            {/* Error */}
+            {phase === "err" && (
+              <div style={{ color: "#dc2626", fontSize: 12, padding: "4px 0" }}>❌ {resultMsg}</div>
+            )}
+
+            {/* Buttons */}
+            {(phase === "idle" || phase === "err") && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={closeDialog} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${t.cardB}`, background: t.bg, color: t.txt2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={() => void handleConfirm()} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#ef4444", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  {phase === "err" ? "Retry" : "Delete All"}
+                </button>
+              </div>
             )}
           </div>
         </div>,
