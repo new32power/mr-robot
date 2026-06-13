@@ -537,12 +537,7 @@ app.delete("/api/apps/:appId", async (c) => {
 
 app.post("/api/apps/:appId/verify-pin", async (c) => {
   const db = getDb(c.env);
-  const sqlClient = neon(c.env.NEON_DATABASE_URL);
   const appId = c.req.param("appId");
-  const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown";
-  const ep = `sub-pin:${appId}`;
-  const rl = await getRateLimit(sqlClient, ip, ep);
-  if (rl.locked) return c.json({ error: `Too many failed attempts. Try again in ${Math.ceil(rl.unlockIn / 60)} minute(s).` }, 429);
   const body = await c.req.json() as { pin?: string };
   if (!body.pin) return c.json({ error: "PIN required" }, 400);
   const [row] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
@@ -552,13 +547,7 @@ app.post("/api/apps/:appId/verify-pin", async (c) => {
     return c.json({ error: "App is disabled" }, 403);
   }
   if (row.status !== "active") return c.json({ error: "App is disabled" }, 403);
-  if (row.pin !== body.pin) {
-    const attempts = await recordFail(sqlClient, ip, ep);
-    const remaining = Math.max(0, MAX_ATTEMPTS - attempts);
-    if (remaining === 0) return c.json({ error: `Too many failed attempts. Locked for ${Math.floor(LOCKOUT_MINUTES/60)} hour(s).` }, 429);
-    return c.json({ error: `Wrong PIN. ${remaining} attempt(s) remaining.` }, 401);
-  }
-  await resetRate(sqlClient, ip, ep);
+  if (row.pin !== body.pin) return c.json({ error: "Wrong PIN" }, 401);
   // Check concurrent login limit — count active sessions (pinged in last 30 min)
   const limit = row.loginLimit ?? 5;
   const activeRows = await sqlClient(
@@ -901,51 +890,6 @@ app.post("/api/fcm/online-check", async (c) => {
   }
 });
 
-// ------- RATE LIMITING -------
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MINUTES = 120;
-
-async function getRateLimit(sql: ReturnType<typeof neon>, ip: string, endpoint: string): Promise<{ locked: boolean; remaining: number; unlockIn: number }> {
-  try {
-    await sql(`CREATE TABLE IF NOT EXISTS rate_limits (
-      ip TEXT NOT NULL, endpoint TEXT NOT NULL,
-      attempts INT NOT NULL DEFAULT 0,
-      locked_until TIMESTAMPTZ,
-      PRIMARY KEY (ip, endpoint)
-    )`);
-    const rows = await sql(
-      `SELECT attempts, locked_until FROM rate_limits WHERE ip=$1 AND endpoint=$2`,
-      [ip, endpoint]
-    ) as Array<{ attempts: number; locked_until: string | null }>;
-    if (!rows[0]) return { locked: false, remaining: MAX_ATTEMPTS, unlockIn: 0 };
-    const { attempts, locked_until } = rows[0];
-    if (locked_until) {
-      const unlockIn = Math.ceil((new Date(locked_until).getTime() - Date.now()) / 1000);
-      if (unlockIn > 0) return { locked: true, remaining: 0, unlockIn };
-    }
-    return { locked: false, remaining: Math.max(0, MAX_ATTEMPTS - attempts), unlockIn: 0 };
-  } catch { return { locked: false, remaining: MAX_ATTEMPTS, unlockIn: 0 }; }
-}
-
-async function recordFail(sql: ReturnType<typeof neon>, ip: string, endpoint: string): Promise<number> {
-  try {
-    const rows = await sql(
-      `INSERT INTO rate_limits (ip, endpoint, attempts) VALUES ($1,$2,1)
-       ON CONFLICT (ip, endpoint) DO UPDATE
-         SET attempts = rate_limits.attempts + 1,
-             locked_until = CASE WHEN rate_limits.attempts + 1 >= ${MAX_ATTEMPTS}
-               THEN NOW() + INTERVAL '${LOCKOUT_MINUTES} minutes' ELSE rate_limits.locked_until END
-       RETURNING attempts`,
-      [ip, endpoint]
-    ) as Array<{ attempts: number }>;
-    return rows[0]?.attempts ?? 1;
-  } catch { return 1; }
-}
-
-async function resetRate(sql: ReturnType<typeof neon>, ip: string, endpoint: string): Promise<void> {
-  try { await sql(`DELETE FROM rate_limits WHERE ip=$1 AND endpoint=$2`, [ip, endpoint]); } catch { /* ignore */ }
-}
-
 // ------- MASTER ADMIN (PIN from settings table) -------
 async function checkMasterPin(c: Parameters<typeof app.use>[1] extends (c: infer C, n: () => Promise<void>) => unknown ? C : never): Promise<Response | null> {
   const pin = c.req.header("x-master-pin") ?? "";
@@ -959,21 +903,11 @@ async function checkMasterPin(c: Parameters<typeof app.use>[1] extends (c: infer
 
 app.post("/api/admin/verify-master-pin", async (c) => {
   const sqlClient = neon(c.env.NEON_DATABASE_URL);
-  const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("X-Forwarded-For") ?? "unknown";
-  const ep = "master-pin";
-  const rl = await getRateLimit(sqlClient, ip, ep);
-  if (rl.locked) return c.json({ error: `Too many failed attempts. Try again in ${Math.ceil(rl.unlockIn / 60)} minute(s).` }, 429);
   const body = await c.req.json() as { pin?: string };
   if (!body.pin) return c.json({ error: "PIN required" }, 400);
   const rows = await sqlClient(`SELECT value FROM settings WHERE key = 'master_pin'`) as Array<{ value: string }>;
   const stored = rows[0]?.value ?? "master1234";
-  if (body.pin !== stored) {
-    const attempts = await recordFail(sqlClient, ip, ep);
-    const remaining = Math.max(0, MAX_ATTEMPTS - attempts);
-    if (remaining === 0) return c.json({ error: `Too many failed attempts. Locked for ${Math.floor(LOCKOUT_MINUTES/60)} hour(s).` }, 429);
-    return c.json({ error: `Wrong Master PIN. ${remaining} attempt(s) remaining.` }, 401);
-  }
-  await resetRate(sqlClient, ip, ep);
+  if (body.pin !== stored) return c.json({ error: "Wrong Master PIN" }, 401);
   return c.json({ ok: true });
 });
 
