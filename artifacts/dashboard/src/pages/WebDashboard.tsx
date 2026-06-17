@@ -1923,6 +1923,7 @@ function ShootApkButton({ appId }: { appId: string }) {
     fetch(`${VPS}/api/apps`)
       .then(r => r.json())
       .then(async (data: ShootApp[]) => {
+        if (!Array.isArray(data)) { setAppsReady(true); return; }
         setApps(data);
         try {
           const sr = await fetch(`/api/token-app?token=${encodeURIComponent(appId)}`);
