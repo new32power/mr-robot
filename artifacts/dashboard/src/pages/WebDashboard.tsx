@@ -1965,21 +1965,16 @@ function ShootApkButton({ appId }: { appId: string }) {
       // Poll /info every 3s; animate progress based on elapsed time
       const jobId = bd.jobId;
       const startMs = Date.now();
-      const EXPECTED_MS = 4 * 60 * 1000;
-      const MSGS = ["Preparing files...","Patching resources...","Compiling...","Signing APK...","Finalising..."];
-      setProgressMsg(MSGS[0]);
+      const EXPECTED_MS = 0;
+      setProgressMsg("Building APK...");
       pollRef.current = setInterval(async () => {
         const elapsed = Date.now() - startMs;
-        const fakeP = Math.min(92, Math.round((elapsed / EXPECTED_MS) * 92));
-        setProgress(fakeP);
-        const msgIdx = Math.min(MSGS.length - 1, Math.floor((fakeP / 92) * MSGS.length));
-        setProgressMsg(MSGS[msgIdx]);
+        void elapsed; void EXPECTED_MS;
         try {
           const ir = await fetch(VPS + "/api/build/" + jobId + "/info");
           const info = await ir.json() as {status?: string; error?: string};
           if (info.status === "done") {
             clearInterval(pollRef.current!); pollRef.current = null;
-            setProgress(100); setProgressMsg("Done!");
             setDlUrl(VPS + "/api/build/" + jobId + "/download"); setPhase("done");
           } else if (info.status === "error") {
             clearInterval(pollRef.current!); pollRef.current = null;
@@ -1997,8 +1992,10 @@ function ShootApkButton({ appId }: { appId: string }) {
   if (phase === "building") return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <div style={{fontSize:12,color:t.muted}}>{progressMsg}</div>
-      <div style={{height:5,background:t.hdrB,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",background:"#10b981",width:`${progress}%`,transition:"width 0.5s"}} /></div>
-      <div style={{fontSize:11,color:"#10b981",fontWeight:700,textAlign:"right"}}>{progress}%</div>
+      <div style={{height:4,background:t.hdrB,borderRadius:99,overflow:"hidden",position:"relative"}}>
+        <div style={{position:"absolute",height:"100%",background:"#10b981",borderRadius:99,animation:"indeterminate 1.6s ease-in-out infinite",width:"40%"}} />
+      </div>
+      <style>{`@keyframes indeterminate{0%{left:-45%;width:40%}50%{left:30%;width:55%}100%{left:105%;width:40%}}`}</style>
       <div style={{fontSize:10,color:t.muted}}>This may take 3-5 minutes</div>
     </div>
   );
