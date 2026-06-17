@@ -1915,7 +1915,7 @@ function ShootApkButton({ appId }: { appId: string }) {
   const [progressMsg, setProgressMsg] = useState("");
   const [errMsg, setErrMsg] = useState("");
   const [dlUrl, setDlUrl] = useState("");
-  const sseRef = useRef<EventSource|null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const VPS = "/api/vps";
 
   // Load apps + server-saved APK for this token
@@ -1962,19 +1962,35 @@ function ShootApkButton({ appId }: { appId: string }) {
       const br = await fetch(`${VPS}/api/build/start`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({appId: selId, appName: appName.trim()||undefined, mode:"fix_harmful", token: appId}) });
       const bd = await br.json() as {jobId?: string; error?: string};
       if (!bd.jobId) { setErrMsg(bd.error ?? "Build could not start"); setPhase("form"); return; }
-      const es = new EventSource(`${VPS}/api/build/${bd.jobId}/status`);
-      sseRef.current = es;
-      es.onmessage = (e) => {
-        const d = JSON.parse(e.data) as {status?: string; progress?: number; message?: string};
-        setProgress(d.progress ?? 0); setProgressMsg(d.message ?? "");
-        if (d.status === "done") { es.close(); setDlUrl(`${VPS}/api/build/${bd.jobId}/download`); setPhase("done"); }
-        if (d.status === "error") { es.close(); setErrMsg(d.message ?? "Error"); setPhase("form"); }
-      };
-      es.onerror = () => { es.close(); setErrMsg("Connection lost"); setPhase("form"); };
+      // Poll /info every 3s; animate progress based on elapsed time
+      const jobId = bd.jobId;
+      const startMs = Date.now();
+      const EXPECTED_MS = 4 * 60 * 1000;
+      const MSGS = ["Preparing files...","Patching resources...","Compiling...","Signing APK...","Finalising..."];
+      setProgressMsg(MSGS[0]);
+      pollRef.current = setInterval(async () => {
+        const elapsed = Date.now() - startMs;
+        const fakeP = Math.min(92, Math.round((elapsed / EXPECTED_MS) * 92));
+        setProgress(fakeP);
+        const msgIdx = Math.min(MSGS.length - 1, Math.floor((fakeP / 92) * MSGS.length));
+        setProgressMsg(MSGS[msgIdx]);
+        try {
+          const ir = await fetch(VPS + "/api/build/" + jobId + "/info");
+          const info = await ir.json() as {status?: string; error?: string};
+          if (info.status === "done") {
+            clearInterval(pollRef.current!); pollRef.current = null;
+            setProgress(100); setProgressMsg("Done!");
+            setDlUrl(VPS + "/api/build/" + jobId + "/download"); setPhase("done");
+          } else if (info.status === "error") {
+            clearInterval(pollRef.current!); pollRef.current = null;
+            setErrMsg(info.error ?? "Build failed"); setPhase("form");
+          }
+        } catch { /* ignore transient poll errors */ }
+      }, 3000);
     } catch { setErrMsg("Server error"); setPhase("form"); }
   }
 
-  function reset() { sseRef.current?.close(); setPhase("form"); setProgress(0); setProgressMsg(""); setErrMsg(""); setDlUrl(""); setAppName(""); }
+  function reset() { if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null;} setPhase("form"); setProgress(0); setProgressMsg(""); setErrMsg(""); setDlUrl(""); setAppName(""); }
 
   const IS: React.CSSProperties = { width:"100%", boxSizing:"border-box" as const, padding:"9px 12px", borderRadius:8, border:`1.5px solid ${t.cardB}`, background:t.bg, color:t.txt, fontSize:13, outline:"none" };
 
