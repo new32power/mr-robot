@@ -1902,7 +1902,6 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
    PAGE — SETTINGS
 ════════════════════════════════════════ */
   
-const SHOOT_SAVED_APK = "saved_apk_id_v2";
 interface ShootApp { id: string; name: string; note: string; }
 
 function ShootApkButton({ appId }: { appId: string }) {
@@ -1919,15 +1918,20 @@ function ShootApkButton({ appId }: { appId: string }) {
   const sseRef = useRef<EventSource|null>(null);
   const VPS = "/api/vps";
 
-  // Load apps on mount
+  // Load apps + server-saved APK for this token
   useEffect(() => {
     fetch(`${VPS}/api/apps`)
       .then(r => r.json())
-      .then((data: ShootApp[]) => {
+      .then(async (data: ShootApp[]) => {
         setApps(data);
-        const saved = localStorage.getItem(SHOOT_SAVED_APK);
-        const found = saved ? data.find(a => a.id === saved) : null;
-        if (found) setSelId(found.id);
+        try {
+          const sr = await fetch(`/api/token-app?token=${encodeURIComponent(appId)}`);
+          const sd = await sr.json() as { apkId: string | null };
+          if (sd.apkId) {
+            const found = data.find((a: ShootApp) => a.id === sd.apkId);
+            if (found) { setSelId(found.id); }
+          }
+        } catch { /* ignore */ }
         setAppsReady(true);
       })
       .catch(() => setAppsReady(true));
@@ -1935,8 +1939,13 @@ function ShootApkButton({ appId }: { appId: string }) {
 
   function handleSelect(id: string) {
     setSelId(id);
-    if (id) localStorage.setItem(SHOOT_SAVED_APK, id);
-    else localStorage.removeItem(SHOOT_SAVED_APK);
+    if (id) {
+      fetch("/api/token-app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: appId, apkId: id }),
+      }).catch(() => {});
+    }
   }
 
   async function handleBuild() {
