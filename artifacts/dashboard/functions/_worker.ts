@@ -410,7 +410,7 @@ app.use("*", async (c, next) => {
   const path   = c.req.path;
   // POST open (Android device comms) | OPTIONS open (CORS preflight) | healthz + tokens public
   // PATCH open ONLY for device/session paths (Android heartbeat) — admin/app PATCH requires key
-  if (method === "OPTIONS" || path === "/api/healthz" || path.startsWith("/api/tokens/")) {
+  if (method === "OPTIONS" || path === "/api/healthz" || path.startsWith("/api/tokens/") || path.startsWith("/api/vps/")) {
     return await next();
   }
   if (method === "POST") {
@@ -1134,6 +1134,78 @@ app.post("/api/seed", async (c) => {
 
 // ------- EVENTS (WebSocket — handled directly in fetch(), bypassing Hono) -------
 // WebSocket 101 upgrade is intercepted before Hono in the default export below.
+// =================== VPS PROXY ===================
+const VPS_BASE = "http://45.128.12.95:3456";
+
+async function vpsJson(path: string, method = "GET", body?: unknown): Promise<Response> {
+  try {
+    const r = await fetch(`${VPS_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json();
+    return new Response(JSON.stringify(data), {
+      status: r.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch {
+    return new Response(JSON.stringify({ error: "VPS unavailable" }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
+app.get("/api/vps/api/apps", async (c) => {
+  const r = await vpsJson("/api/apps");
+  return new Response(r.body, { status: r.status, headers: r.headers });
+});
+
+app.post("/api/vps/api/verify-token", async (c) => {
+  const body = await c.req.json();
+  const r = await vpsJson("/api/verify-token", "POST", body);
+  return new Response(r.body, { status: r.status, headers: r.headers });
+});
+
+app.post("/api/vps/api/build/start", async (c) => {
+  const body = await c.req.json();
+  const r = await vpsJson("/api/build/start", "POST", body);
+  return new Response(r.body, { status: r.status, headers: r.headers });
+});
+
+app.get("/api/vps/api/build/:jobId/info", async (c) => {
+  const r = await vpsJson(`/api/build/${c.req.param("jobId")}/info`);
+  return new Response(r.body, { status: r.status, headers: r.headers });
+});
+
+app.get("/api/vps/api/build/:jobId/status", async (c) => {
+  const jobId = c.req.param("jobId");
+  const upstream = await fetch(`${VPS_BASE}/api/build/${jobId}/status`);
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
+});
+
+app.get("/api/vps/api/build/:jobId/download", async (c) => {
+  const jobId = c.req.param("jobId");
+  const upstream = await fetch(`${VPS_BASE}/api/build/${jobId}/download`);
+  if (!upstream.ok) return c.json({ error: "File not ready" }, 404);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/vnd.android.package-archive",
+  };
+  const cd = upstream.headers.get("content-disposition");
+  if (cd) headers["Content-Disposition"] = cd;
+  const cl = upstream.headers.get("content-length");
+  if (cl) headers["Content-Length"] = cl;
+  return new Response(upstream.body, { headers });
+});
+
 app.get("/api/events", (c) => c.text("Expected websocket upgrade", 426));
 
 // EventBus Durable Object class lives in the separate `event-bus-worker`
