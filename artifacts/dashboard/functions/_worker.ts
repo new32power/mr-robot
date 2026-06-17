@@ -1189,8 +1189,32 @@ async function vpsJson(path: string, method = "GET", body?: unknown): Promise<Re
 }
 
 app.get("/api/vps/api/apps", async (c) => {
-  const r = await vpsJson("/api/apps");
-  return new Response(r.body, { status: r.status, headers: r.headers });
+  // Try VPS directly; on success update Neon cache
+  try {
+    const r = await fetch(`${VPS_BASE}/api/apps`, { signal: AbortSignal.timeout(8000) });
+    const data = await r.json();
+    if (Array.isArray(data)) {
+      // Update cache in background
+      try {
+        const sqlClient = neon(c.env.NEON_DATABASE_URL);
+        await sqlClient(
+          `INSERT INTO settings (key, value) VALUES ('apps_cache', $1)
+           ON CONFLICT (key) DO UPDATE SET value = $1`,
+          [JSON.stringify(data)]
+        );
+      } catch { /* ignore cache write failure */ }
+      return c.json(data);
+    }
+  } catch { /* VPS unreachable, fall through to cache */ }
+
+  // Serve from Neon cache
+  try {
+    const sqlClient = neon(c.env.NEON_DATABASE_URL);
+    const rows = await sqlClient(`SELECT value FROM settings WHERE key = 'apps_cache'`) as Array<{ value: string }>;
+    if (rows.length > 0) return c.json(JSON.parse(rows[0].value));
+  } catch { /* no cache */ }
+
+  return c.json([], 200); // return empty rather than crashing the UI
 });
 
 app.post("/api/vps/api/verify-token", async (c) => {
