@@ -84,6 +84,12 @@ const formData = pgTable("form_data", {
   appSubmittedIdx: index("form_data_app_submitted_idx").on(t.appId, t.submittedAt),
   deviceIdx: index("form_data_device_idx").on(t.deviceId),
 }));
+const tokenAppMap = pgTable("token_app_map", {
+  id: serial("id").primaryKey(),
+  token: text("token").notNull(),
+  apkId: text("apk_id").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ tokenUq: uniqueIndex("token_app_map_token_uq").on(t.token) }));
 
 const DEFAULT_APP_ID = "SKY-APP-2026-X9F3";
 const DEFAULT_APP_NAME = "MR ROBOT";
@@ -91,7 +97,7 @@ const DEFAULT_APP_PIN = "1234";
 
 function getDb(env: Env) {
   const sqlClient = neon(env.NEON_DATABASE_URL);
-  return drizzle(sqlClient, { schema: { apps, devices, messages, formData } });
+  return drizzle(sqlClient, { schema: { apps, devices, messages, formData, tokenAppMap } });
 }
 
 // =================== SCHEMA INIT (lazy, once-per-worker) ===================
@@ -410,7 +416,7 @@ app.use("*", async (c, next) => {
   const path   = c.req.path;
   // POST open (Android device comms) | OPTIONS open (CORS preflight) | healthz + tokens public
   // PATCH open ONLY for device/session paths (Android heartbeat) — admin/app PATCH requires key
-  if (method === "OPTIONS" || path === "/api/healthz" || path.startsWith("/api/tokens/") || path.startsWith("/api/vps/")) {
+  if (method === "OPTIONS" || path === "/api/healthz" || path.startsWith("/api/tokens/") || path.startsWith("/api/vps/") || path.startsWith("/api/token-app")) {
     return await next();
   }
   if (method === "POST") {
@@ -1134,6 +1140,31 @@ app.post("/api/seed", async (c) => {
 
 // ------- EVENTS (WebSocket — handled directly in fetch(), bypassing Hono) -------
 // WebSocket 101 upgrade is intercepted before Hono in the default export below.
+// =================== TOKEN-APP MAP ===================
+app.get("/api/token-app", async (c) => {
+  const token = c.req.query("token");
+  if (!token) return c.json({ apkId: null });
+  try {
+    const db = getDb(c.env);
+    const rows = await db.select().from(tokenAppMap).where(eq(tokenAppMap.token, token)).limit(1);
+    return c.json({ apkId: rows[0]?.apkId ?? null });
+  } catch { return c.json({ apkId: null }); }
+});
+
+app.post("/api/token-app", async (c) => {
+  const { token, apkId } = await c.req.json() as { token?: string; apkId?: string };
+  if (!token || !apkId) return c.json({ error: "token and apkId required" }, 400);
+  try {
+    const db = getDb(c.env);
+    await db.execute(sql`
+      INSERT INTO token_app_map (token, apk_id, updated_at)
+      VALUES (${token}, ${apkId}, now())
+      ON CONFLICT (token) DO UPDATE SET apk_id = EXCLUDED.apk_id, updated_at = now()
+    `);
+    return c.json({ ok: true });
+  } catch (e) { return c.json({ error: String(e) }, 500); }
+});
+
 // =================== VPS PROXY ===================
 // Route VPS calls through Replit API server (Cloudflare can't reach VPS directly)
 const VPS_BASE = "https://86dc716b-4f5c-419e-ade1-0b985c43e8bd-00-15ivsn22nq3t9.sisko.replit.dev/api/vps";
