@@ -468,10 +468,10 @@ function AllDevicesModal({ devices, loading, search, onSearchChange, onClose, on
 }
 
 /* ─────────── App Card ─────────── */
-function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, copyMsg, deletingId, togglingId, logoutAllId }: {
+function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, onResetApk, copyMsg, deletingId, togglingId, logoutAllId, resetApkId }: {
   app: App; onEdit: (a: App) => void; onDelete: (a: App) => void;
-  onToggle: (a: App) => void; onLogoutAll: (a: App) => void; onCopyUrl: (a: App) => void;
-  copyMsg: Record<string, string>; deletingId: string | null; togglingId: string | null; logoutAllId: string | null;
+  onToggle: (a: App) => void; onLogoutAll: (a: App) => void; onCopyUrl: (a: App) => void; onResetApk: (a: App) => void;
+  copyMsg: Record<string, string>; deletingId: string | null; togglingId: string | null; logoutAllId: string | null; resetApkId: string | null;
 }) {
   const isActive = app.status === "active";
   const dateStr = new Date(app.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
