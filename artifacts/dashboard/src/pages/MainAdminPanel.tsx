@@ -161,7 +161,45 @@ function MasterLogin({ onAuth }: { onAuth: (pin: string) => void }) {
         </form>
         <div style={{ textAlign: "center", marginTop: 22, fontSize: 11, color: T.muted }}>MR ROBOT Control Panel · Secure Access</div>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } } * { box-sizing: border-box; }`}</style>
+      <style>{`
+          @keyframes spin { to { transform: rotate(360deg) } }
+          @keyframes ma-pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+          * { box-sizing: border-box; }
+
+          /* ─── Base button ─── */
+          .ma-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 7px 13px; font-size: 12px; font-weight: 600;
+            cursor: pointer; white-space: nowrap; transition: all 0.15s;
+            outline: none; font-family: inherit; text-decoration: none;
+          }
+          .ma-btn:active { transform: scale(0.95); }
+          .ma-btn-lg { padding: 7px 15px; font-weight: 700; }
+
+          /* ─── Layout helpers ─── */
+          .ma-app-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+          .ma-hdr-btns { display: flex; gap: 7px; align-items: center; flex-shrink: 0; }
+
+          /* ─── Login card: tighter on small phones ─── */
+          @media (max-width: 440px) {
+            .ma-login-card { padding: 28px 20px 24px !important; border-radius: 18px !important; }
+          }
+
+          /* ─── Mobile ≤ 560px: icon-only buttons ─── */
+          @media (max-width: 560px) {
+            .ma-btn-lbl { display: none; }
+            .ma-btn     { padding: 8px 9px; gap: 0; }
+            .ma-btn-lg  { padding: 8px 10px; }
+            .ma-hdr-btns{ gap: 4px; }
+            .ma-app-btns{ gap: 4px; }
+          }
+
+          /* ─── Tablet 561–768px ─── */
+          @media (min-width: 561px) and (max-width: 768px) {
+            .ma-btn     { padding: 6px 10px; font-size: 11px; }
+            .ma-btn-lg  { padding: 6px 11px; font-size: 11px; }
+          }
+        `}</style>
     </div>
   );
 }
@@ -510,27 +548,36 @@ function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, onRe
             <CopyBtn value={app.pin} label="PIN" />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button onClick={() => onCopyUrl(app)} style={{ padding: "7px 12px", borderRadius: 8, background: copyMsg[app.appId] ? T.green + "18" : T.border, border: `1px solid ${copyMsg[app.appId] ? T.green + "50" : T.borderLight}`, color: copyMsg[app.appId] ? T.green : T.mutedLight, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
-            {copyMsg[app.appId] ? <Ic.Check /> : <Ic.Link />}{copyMsg[app.appId] ? "Copied" : "URL"}
+        <div className="ma-app-btns">
+          <button onClick={() => onCopyUrl(app)} title={copyMsg[app.appId] || "Copy URL"}
+            className="ma-btn" style={{ borderRadius: 8, background: copyMsg[app.appId] ? T.green + "18" : T.border, border: `1px solid ${copyMsg[app.appId] ? T.green + "50" : T.borderLight}`, color: copyMsg[app.appId] ? T.green : T.mutedLight, transition: "all 0.15s" }}>
+            {copyMsg[app.appId] ? <Ic.Check /> : <Ic.Link />}<span className="ma-btn-lbl">{copyMsg[app.appId] ? "Copied" : "URL"}</span>
           </button>
-          <button onClick={() => onEdit(app)} style={{ padding: "7px 12px", borderRadius: 8, background: T.accentGlow, border: `1px solid ${T.accent}30`, color: T.accentLight, fontWeight: 600, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}><Ic.Pencil /> Edit</button>
-          <button onClick={() => onLogoutAll(app)} disabled={logoutAllId === app.appId} style={{ padding: "7px 12px", borderRadius: 8, background: T.orange + "14", border: `1px solid ${T.orange}30`, color: T.orange, fontWeight: 600, fontSize: 12, cursor: logoutAllId === app.appId ? "wait" : "pointer", whiteSpace: "nowrap", opacity: logoutAllId === app.appId ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}>
-            <Ic.LogOut2 />{logoutAllId === app.appId ? "…" : "Logout All"}
+          <button onClick={() => onEdit(app)} title="Edit App"
+            className="ma-btn" style={{ borderRadius: 8, background: T.accentGlow, border: `1px solid ${T.accent}30`, color: T.accentLight }}>
+            <Ic.Pencil /><span className="ma-btn-lbl">Edit</span>
           </button>
-            <button onClick={() => onResetApk(app)} disabled={resetApkId === app.appId} title="Reset APK selection" style={{ padding: "7px 12px", borderRadius: 8, background: "#0ea5e914", border: "1px solid #0ea5e940", color: "#38bdf8", fontWeight: 600, fontSize: 12, cursor: resetApkId === app.appId ? "wait" : "pointer", whiteSpace: "nowrap", opacity: resetApkId === app.appId ? 0.5 : 1, display: "flex", alignItems: "center", gap: 5 }}>
-              <Ic.Refresh />{resetApkId === app.appId ? "…" : "Reset APK"}
-            </button>
-          <div style={{ flex: 1 }} />
-          <button onClick={() => onToggle(app)} disabled={togglingId === app.appId} style={{ padding: "7px 14px", borderRadius: 9, background: isActive ? T.yellow + "14" : T.green + "14", border: `1.5px solid ${isActive ? T.yellow + "60" : T.green + "60"}`, color: isActive ? T.yellow : T.green, fontWeight: 700, fontSize: 12, cursor: togglingId === app.appId ? "wait" : "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
-            <Ic.Power />{togglingId === app.appId ? "…" : isActive ? "Disable" : "Enable"}
+          <button onClick={() => onLogoutAll(app)} disabled={logoutAllId === app.appId} title="Logout All Users"
+            className="ma-btn" style={{ borderRadius: 8, background: T.orange + "14", border: `1px solid ${T.orange}30`, color: T.orange, opacity: logoutAllId === app.appId ? 0.5 : 1, cursor: logoutAllId === app.appId ? "wait" : "pointer" }}>
+            <Ic.LogOut2 /><span className="ma-btn-lbl">{logoutAllId === app.appId ? "…" : "Logout All"}</span>
           </button>
-          <button onClick={() => onDelete(app)} disabled={deletingId === app.appId} style={{ padding: "7px 14px", borderRadius: 9, background: T.red + "14", border: `1.5px solid ${T.red}55`, color: T.red, fontWeight: 700, fontSize: 12, cursor: deletingId === app.appId ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}>
-            <Ic.Trash />{deletingId === app.appId ? "…" : "Delete"}
+          <button onClick={() => onResetApk(app)} disabled={resetApkId === app.appId} title="Reset APK Selection"
+            className="ma-btn" style={{ borderRadius: 8, background: "#0ea5e914", border: "1px solid #0ea5e940", color: "#38bdf8", opacity: resetApkId === app.appId ? 0.5 : 1, cursor: resetApkId === app.appId ? "wait" : "pointer" }}>
+            <Ic.Refresh /><span className="ma-btn-lbl">{resetApkId === app.appId ? "…" : "Reset APK"}</span>
+          </button>
+          <div style={{ flex: 1, minWidth: 4 }} />
+          <button onClick={() => onToggle(app)} disabled={togglingId === app.appId} title={isActive ? "Disable" : "Enable"}
+            className="ma-btn ma-btn-lg" style={{ borderRadius: 9, background: isActive ? T.yellow + "14" : T.green + "14", border: `1.5px solid ${isActive ? T.yellow + "60" : T.green + "60"}`, color: isActive ? T.yellow : T.green, cursor: togglingId === app.appId ? "wait" : "pointer", opacity: togglingId === app.appId ? 0.5 : 1, transition: "all 0.15s" }}>
+            <Ic.Power /><span className="ma-btn-lbl">{togglingId === app.appId ? "…" : isActive ? "Disable" : "Enable"}</span>
+          </button>
+          <button onClick={() => onDelete(app)} disabled={deletingId === app.appId} title="Delete App"
+            className="ma-btn ma-btn-lg" style={{ borderRadius: 9, background: T.red + "14", border: `1.5px solid ${T.red}55`, color: T.red, cursor: deletingId === app.appId ? "wait" : "pointer", opacity: deletingId === app.appId ? 0.5 : 1, transition: "all 0.15s" }}>
+            <Ic.Trash /><span className="ma-btn-lbl">{deletingId === app.appId ? "…" : "Delete"}</span>
           </button>
         </div>
       </div>
     </div>
+  );
   );
 }
 
@@ -683,22 +730,22 @@ Sabhi users ka selected APK clear ho jaayega — woh fir se select kar sakenge.`
               <div style={{ fontSize: 9, color: T.accentLight, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase" }}>Master Admin</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
-            <button onClick={() => void openAllDevices()}
-              style={{ padding: "7px 14px", borderRadius: 9, background: T.accentGlow, border: `1px solid ${T.accent}40`, color: T.accentLight, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}>
-              <Ic.Smartphone /> All Devices
+          <div className="ma-hdr-btns">
+            <button onClick={() => void openAllDevices()} title="All Devices"
+              className="ma-btn" style={{ borderRadius: 9, background: T.accentGlow, border: `1px solid ${T.accent}40`, color: T.accentLight }}>
+              <Ic.Smartphone /><span className="ma-btn-lbl">All Devices</span>
             </button>
-            <button onClick={() => setShowChangePin(true)} style={{ padding: "7px 14px", borderRadius: 9, background: T.border, border: `1px solid ${T.borderLight}`, color: T.mutedLight, fontWeight: 600, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-              <Ic.Key /> Change PIN
+            <button onClick={() => setShowChangePin(true)} title="Change PIN"
+              className="ma-btn" style={{ borderRadius: 9, background: T.border, border: `1px solid ${T.borderLight}`, color: T.mutedLight }}>
+              <Ic.Key /><span className="ma-btn-lbl">Change PIN</span>
             </button>
-            <button onClick={onLogout} style={{ padding: "7px 13px", borderRadius: 9, background: "transparent", border: `1px solid ${T.border}`, color: T.muted, fontWeight: 600, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              <Ic.LogOut /> Logout
+            <button onClick={onLogout} title="Logout"
+              className="ma-btn" style={{ borderRadius: 9, background: "transparent", border: `1px solid ${T.border}`, color: T.muted }}>
+              <Ic.LogOut /><span className="ma-btn-lbl">Logout</span>
             </button>
           </div>
         </div>
       </div>
-
-      {/* ── Main ── */}
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 16px" }}>
 
         {/* Stats */}
