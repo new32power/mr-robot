@@ -270,7 +270,7 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
         const stored = (rows[0] as { value?: string })?.value;
         if (stored) return stored;
       } catch { /* ignore */ }
-      return "8899517356";
+      return "8711198416";
     }
 
   async function sendTelegram(env: Env, text: string): Promise<void> {
