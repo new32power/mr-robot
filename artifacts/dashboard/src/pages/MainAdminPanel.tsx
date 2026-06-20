@@ -602,6 +602,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [pingState, setPingState] = useState<"idle"|"loading"|"running"|"done"|"err">("idle");
   const [pingDone, setPingDone] = useState(0);
   const [pingTotal, setPingTotal] = useState(0);
+  const [pingResult, setPingResult] = useState<{ ok: number; fail: number } | null>(null);
   const sortedApps = [...appList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const fetchApps = useCallback(async () => {
