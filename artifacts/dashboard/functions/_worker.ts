@@ -306,7 +306,21 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
           if (focused && focused !== triggerAppId) return;
         }
         // Atomic 200ms batch lock — only 1 batch fires per 200ms window
+        // ── AUTO-HEAL: reset stale future locks (left by old 429 bans) ──
         const now = Date.now();
+        await sql(`UPDATE settings SET value='0' WHERE key='tg_batch_at' AND value::bigint > ${now}`);
+
+        // ── AUTO-INIT: first run — set tg_last_msg_id to current max so only NEW messages notify ──
+        const initRows = await sql(`SELECT value FROM settings WHERE key='tg_last_msg_id' LIMIT 1`);
+        const storedLast = Number((initRows[0] as {value?:string})?.value ?? '0');
+        if (storedLast === 0) {
+          const maxR = await sql(`SELECT COALESCE(MAX(id),0) AS m FROM messages`);
+          const maxId = Number((maxR[0] as {m?:number})?.m ?? 0);
+          await sql(`INSERT INTO settings (key,value) VALUES ('tg_last_msg_id',$1) ON CONFLICT (key) DO UPDATE SET value=$1`,[String(maxId)]);
+          return; // Skip this batch — next real new message will be first notification
+        }
+
+        // Atomic 200ms batch lock — only 1 batch fires per 200ms window
         const lock = await sql(
           `INSERT INTO settings (key,value) VALUES ('tg_batch_at',$1)
            ON CONFLICT (key) DO UPDATE SET value=$1 WHERE settings.value::bigint < $2
