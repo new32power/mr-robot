@@ -1302,8 +1302,8 @@ app.post("/api/token-app", async (c) => {
     const apkId = c.req.param("apkId");
     try {
       const db = getDb(c.env);
-      await db.delete(tokenAppMap).where(eq(tokenAppMap.apkId, apkId));
-      return c.json({ ok: true });
+      const deleted = await db.delete(tokenAppMap).where(eq(tokenAppMap.token, apkId)).returning();
+      return c.json({ ok: true, deleted: deleted.length });
     } catch (e) { return c.json({ error: String(e) }, 500); }
   });;
 
