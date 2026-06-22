@@ -28,9 +28,13 @@ CREATE TABLE IF NOT EXISTS apps (
   name TEXT NOT NULL,
   pin TEXT NOT NULL DEFAULT '1234',
   status TEXT NOT NULL DEFAULT 'active',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  delete_protection_pin TEXT,
+  delete_protection_enabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS apps_app_id_uq ON apps(app_id);
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS delete_protection_pin TEXT;
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS delete_protection_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS devices (
   id SERIAL PRIMARY KEY,
