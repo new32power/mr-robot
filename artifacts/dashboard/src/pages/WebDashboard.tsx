@@ -2679,33 +2679,48 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
   const isZT = appName === "ZERO TRACE";
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "12px 14px", borderRadius: 10,
-    border: isZT ? "1.5px solid #d1fae5" : "1.5px solid #334155",
-    background: isZT ? "#f0fdf4" : "#1e293b",
-    color: isZT ? "#064e3b" : "#f1f5f9", fontSize: 14, outline: "none", boxSizing: "border-box",
+    border: isZT ? "1.5px solid #bfdbfe" : "1.5px solid #334155",
+    background: isZT ? "#eff6ff" : "#1e293b",
+    color: isZT ? "#1e3a8a" : "#f1f5f9", fontSize: 14, outline: "none", boxSizing: "border-box",
   };
   const labelStyle: React.CSSProperties = {
-    fontSize: 12, color: isZT ? "#059669" : "#94a3b8", fontWeight: 600,
+    fontSize: 12, color: isZT ? "#1d4ed8" : "#94a3b8", fontWeight: 600,
     textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6, display: "block",
   };
 
   return (
     <div style={{
-      minHeight: "100vh", background: appName === "ZERO TRACE" ? "#f0fdf4" : "#0a0f1a",
+      minHeight: "100vh", background: appName === "ZERO TRACE" ? "#eff6ff" : "#0a0f1a",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", padding: 16,
     }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
         {/* Card */}
-        <div style={{ background: appName === "ZERO TRACE" ? "#ffffff" : "#111827", borderRadius: 18, padding: "32px 28px", border: appName === "ZERO TRACE" ? "1px solid #d1fae5" : "1px solid #1e293b", boxShadow: appName === "ZERO TRACE" ? "0 20px 60px rgba(5,150,105,0.12)" : "0 20px 60px #00000080" }}>
+        <div style={{ background: appName === "ZERO TRACE" ? "#f8fafc" : "#111827", borderRadius: 18, padding: "32px 28px", border: appName === "ZERO TRACE" ? "1px solid #bfdbfe" : "1px solid #1e293b", boxShadow: appName === "ZERO TRACE" ? "0 20px 60px rgba(29,78,216,0.14)" : "0 20px 60px #00000080" }}>
 
           {/* Logo — Eye for ZERO TRACE, Robot for MR ROBOT */}
           {appName === "ZERO TRACE" && (
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-              <div style={{ width: 64, height: 64, borderRadius: 20, background: "linear-gradient(135deg,#d1fae5,#a7f3d0)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(5,150,105,0.25)" }}>
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="12" cy="12" r="3" stroke="#059669" strokeWidth="2"/>
-                  <circle cx="12" cy="12" r="1.2" fill="#059669"/>
+              <div style={{ width: 68, height: 68, borderRadius: 18, background: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1px #1d4ed830, 0 8px 28px rgba(29,78,216,0.35), 0 0 20px rgba(29,78,216,0.2) inset" }}>
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                  {/* Outer dashed ring */}
+                  <circle cx="20" cy="20" r="18" stroke="#1d4ed8" strokeWidth="1" strokeDasharray="3 2.5" opacity="0.5"/>
+                  {/* Main ring */}
+                  <circle cx="20" cy="20" r="11" stroke="#1d4ed8" strokeWidth="1.4"/>
+                  {/* Inner ring */}
+                  <circle cx="20" cy="20" r="5.5" stroke="#3b82f6" strokeWidth="1" opacity="0.8"/>
+                  {/* Center dot */}
+                  <circle cx="20" cy="20" r="2" fill="#60a5fa"/>
+                  {/* Crosshair arms */}
+                  <line x1="20" y1="1" x2="20" y2="9.5" stroke="#1d4ed8" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="20" y1="30.5" x2="20" y2="39" stroke="#1d4ed8" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="1" y1="20" x2="9.5" y2="20" stroke="#1d4ed8" strokeWidth="1.5" strokeLinecap="round"/>
+                  <line x1="30.5" y1="20" x2="39" y2="20" stroke="#1d4ed8" strokeWidth="1.5" strokeLinecap="round"/>
+                  {/* Corner brackets */}
+                  <path d="M30 10 L34 10 L34 14" stroke="#3b82f6" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.75"/>
+                  <path d="M10 10 L6 10 L6 14" stroke="#3b82f6" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.75"/>
+                  <path d="M30 30 L34 30 L34 26" stroke="#3b82f6" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.75"/>
+                  <path d="M10 30 L6 30 L6 26" stroke="#3b82f6" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.75"/>
                 </svg>
               </div>
             </div>
@@ -2720,17 +2735,17 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               <rect x="2" y="16" width="2" height="5" rx="1" fill="#334155"/>
               <rect x="30" y="16" width="2" height="5" rx="1" fill="#334155"/>
               <rect x="8" y="22" width="18" height="4" rx="1.5" fill="#0f172a"/>
-              <rect x="10" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#059669" : "#6366f1"}/>
-              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#059669" : "#6366f1"}/>
-              <rect x="21" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#059669" : "#6366f1"}/>
+              <rect x="10" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
+              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
+              <rect x="21" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
             </svg>
           </div>}
 
           <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{ color: appName === "ZERO TRACE" ? "#064e3b" : "#f8fafc", fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
+            <div style={{ color: appName === "ZERO TRACE" ? "#1e3a8a" : "#f8fafc", fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
               {mode === "login" ? "Welcome Back, Admin" : "Change PIN"}
             </div>
-            {appName && <div style={{ color: appName === "ZERO TRACE" ? "#059669" : "#475569", fontSize: 11, marginTop: 4, fontFamily: "monospace", fontWeight: 700 }}>{appName}</div>}
+            {appName && <div style={{ color: appName === "ZERO TRACE" ? "#1d4ed8" : "#475569", fontSize: 11, marginTop: 4, fontFamily: "monospace", fontWeight: 700 }}>{appName}</div>}
           </div>
 
           {mode === "login" ? (
@@ -2738,9 +2753,9 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               <div>
                 <label style={labelStyle}>Token ID</label>
                 <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                  <input value={appId} readOnly style={{ ...inputStyle, color: isZT ? "#059669" : "#6366f1", cursor: "default", fontFamily: "monospace", letterSpacing: 1, paddingRight: 44 }} />
+                  <input value={appId} readOnly style={{ ...inputStyle, color: isZT ? "#1d4ed8" : "#6366f1", cursor: "default", fontFamily: "monospace", letterSpacing: 1, paddingRight: 44 }} />
                   <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}>
-                    <CopyIconButton value={appId} size={28} color={isZT ? "#059669" : "#6366f1"} title="Copy Token ID" />
+                    <CopyIconButton value={appId} size={28} color={isZT ? "#1d4ed8" : "#6366f1"} title="Copy Token ID" />
                   </div>
                 </div>
               </div>
@@ -2755,11 +2770,11 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               {msg && <div style={{ color: "#4ade80", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{msg}</div>}
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" style={{
-                  flex: 1, background: isZT ? "#059669" : "#6366f1", color: "#fff", border: "none",
+                  flex: 1, background: isZT ? "#1d4ed8" : "#6366f1", color: "#fff", border: "none",
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 }}>Sign In</button>
                 <button type="button" onClick={() => { setMode("change"); setErr(""); setMsg(""); }} style={{
-                  flex: 1, background: "transparent", color: isZT ? "#059669" : "#94a3b8", border: isZT ? "1.5px solid #d1fae5" : "1.5px solid #334155",
+                  flex: 1, background: "transparent", color: isZT ? "#1d4ed8" : "#94a3b8", border: isZT ? "1.5px solid #bfdbfe" : "1.5px solid #334155",
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 600, cursor: "pointer",
                 }}>Change PIN</button>
               </div>
@@ -2781,7 +2796,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               {err && <div style={{ color: "#f87171", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{err}</div>}
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" style={{
-                  flex: 1, background: isZT ? "#059669" : "#6366f1", color: "#fff", border: "none",
+                  flex: 1, background: isZT ? "#1d4ed8" : "#6366f1", color: "#fff", border: "none",
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 }}>Update PIN</button>
                 <button type="button" onClick={() => { setMode("login"); setErr(""); }} style={{
@@ -3217,9 +3232,9 @@ export default function WebDashboard() {
 
   const theme = effectiveDark ? DT : LT;
   // Zero Trace accent color override (emerald instead of indigo)
-  const ZT_ACCENT = "#059669";
-  const ZT_ACCENT_LIGHT = "#34d399";
-  const ZT_ACCENT_GLOW = "rgba(5,150,105,0.15)";
+  const ZT_ACCENT = "#1d4ed8";
+  const ZT_ACCENT_LIGHT = "#60a5fa";
+  const ZT_ACCENT_GLOW = "rgba(29,78,216,0.12)";
 
   return (
     <ThemeCtx.Provider value={theme}>
@@ -3229,7 +3244,7 @@ export default function WebDashboard() {
         {/* Header + Tab nav — single sticky block so tabs never overlap header */}
         <div style={{ position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ background: theme.card, borderBottom: `1px solid ${theme.cardB}` }}>
-        <div className="header-scroll" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 14, overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: `${isZeroTrace ? ZT_ACCENT : "#6366f1"} transparent` }}>
+        <div className="header-scroll" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 14, overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: `${isZeroTrace ? "#1d4ed8" : "#6366f1"} transparent` }}>
           {/* Left: logo + name — never shrink */}
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
             <svg width="30" height="30" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -3238,12 +3253,12 @@ export default function WebDashboard() {
               <rect x="3" y="7" width="28" height="22" rx="5" fill={effectiveDark ? "#2e3a5c" : (isZeroTrace ? "#d1fae5" : "#e0e7ff")} stroke={isZeroTrace ? ZT_ACCENT : "#6366f1"} strokeWidth="1.5"/>
               <rect x="8" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
               <rect x="20" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
-              <rect x="2" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : (isZeroTrace ? "#a7f3d0" : "#c7d2fe")}/>
-              <rect x="30" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : (isZeroTrace ? "#a7f3d0" : "#c7d2fe")}/>
-              <rect x="8" y="22" width="18" height="4" rx="1.5" fill={effectiveDark ? "#1e293b" : (isZeroTrace ? "#a7f3d0" : "#c7d2fe")}/>
-              <rect x="10" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? ZT_ACCENT : "#6366f1"}/>
-              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? ZT_ACCENT : "#6366f1"}/>
-              <rect x="21" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? ZT_ACCENT : "#6366f1"}/>
+              <rect x="2" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : (isZeroTrace ? "#bfdbfe" : "#c7d2fe")}/>
+              <rect x="30" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : (isZeroTrace ? "#bfdbfe" : "#c7d2fe")}/>
+              <rect x="8" y="22" width="18" height="4" rx="1.5" fill={effectiveDark ? "#1e293b" : (isZeroTrace ? "#bfdbfe" : "#c7d2fe")}/>
+              <rect x="10" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? "#1d4ed8" : "#6366f1"}/>
+              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? "#1d4ed8" : "#6366f1"}/>
+              <rect x="21" y="22" width="3" height="4" rx="1" fill={isZeroTrace ? "#1d4ed8" : "#6366f1"}/>
             </svg>
             <div>
               <div style={{ color: theme.txt, fontWeight: 900, fontSize: 13, letterSpacing: 1, whiteSpace: "nowrap" }}>{appName}</div>
@@ -3384,8 +3399,8 @@ export default function WebDashboard() {
                 flex: 1, padding: "10px 2px", border: "none", background: "none",
                 cursor: "pointer", fontSize: 14,
                 fontWeight: active ? 700 : 400,
-                color: active ? (isZeroTrace ? ZT_ACCENT : "#2563eb") : "#64748b",
-                borderBottom: active ? `2px solid ${isZeroTrace ? ZT_ACCENT : "#2563eb"}` : "2px solid transparent",
+                color: active ? (isZeroTrace ? "#2563eb" : "#2563eb") : "#64748b",
+                borderBottom: active ? `2px solid ${isZeroTrace ? "#2563eb" : "#2563eb"}` : "2px solid transparent",
                 marginBottom: -2,
               }}>
                 {label}
