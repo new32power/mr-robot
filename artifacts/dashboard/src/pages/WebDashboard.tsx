@@ -20,19 +20,36 @@ interface Theme {
   bg: string; card: string; cardB: string;
   hdr: string; hdrB: string;
   txt: string; txt2: string; muted: string;
+  accent: string; activeBg: string;
   isDark: boolean;
 }
 const LT: Theme = {
   bg: "#f1f5f9", card: "#ffffff", cardB: "#e2e8f0",
   hdr: "#f8fafc", hdrB: "#f1f5f9",
   txt: "#0f172a", txt2: "#334155", muted: "#94a3b8",
+  accent: t.accent, activeBg: "#eef2ff",
   isDark: false,
 };
 const DT: Theme = {
   bg: "#0f172a", card: "#1e293b", cardB: "#334155",
   hdr: "#162032", hdrB: "#243444",
   txt: "#f1f5f9", txt2: "#cbd5e1", muted: "#94a3b8",
+  accent: t.accent, activeBg: "#1e1b4b",
   isDark: true,
+};
+/* ── Zero Trace theme — completely separate visual identity ── */
+const ZT: Theme = {
+  bg: "#eef4ff",        // blue-tinted background (vs neutral gray in LT)
+  card: "#ffffff",       // white cards pop against blue bg
+  cardB: "#93c5fd",     // BLUE card borders — biggest visual diff from LT
+  hdr: "#dbeafe",       // light blue section headers (vs near-white in LT)
+  hdrB: "#bfdbfe",      // blue section border (vs light gray in LT)
+  txt: "#0f172a",       // dark text
+  txt2: "#1e3a8a",      // dark navy secondary text (vs slate-gray in LT)
+  muted: "#4b6cb7",     // blue-slate muted text (vs gray in LT)
+  accent: "#1d4ed8",    // dark blue accent (vs indigo/purple in LT)
+  activeBg: "#dbeafe",  // blue active highlight (vs indigo tint in LT)
+  isDark: false,
 };
 const ThemeCtx = createContext<Theme>(LT);
 function useTheme() { return useContext(ThemeCtx); }
@@ -205,7 +222,7 @@ function ScrollToTopBtn() {
         right: 18,
         zIndex: 999999,
         width: 46, height: 46, borderRadius: "50%",
-        background: "#6366f1", border: "none", color: "#fff",
+        background: t.accent, border: "none", color: "#fff",
         fontSize: 22, fontWeight: 700, cursor: "pointer",
         boxShadow: "0 4px 14px rgba(99,102,241,0.55)",
         display: "flex",
@@ -284,7 +301,7 @@ const MsgCard = React.memo(function MsgCard({
         {/* Body */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 6 }}>
           <div style={{ flex: 1, fontSize: 13, color: isBankingMsg(msg.body, msg.fromSender) ? "#16a34a" : t.txt, lineHeight: 1.55, wordBreak: "break-word" }}>{msg.body}</div>
-          <CopyIconButton value={msg.body} size={22} color="#6366f1" title="Copy message" />
+          <CopyIconButton value={msg.body} size={22} color=t.accent title="Copy message" />
         </div>
 
         {/* From / To + Delete */}
@@ -294,14 +311,14 @@ const MsgCard = React.memo(function MsgCard({
             return (
               <span style={{ color: "#64748b", display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <span style={{ color: "#94a3b8", marginRight: 3, fontWeight: 600, fontSize: 10 }}>FROM</span>{displaySender}
-                <CopyIconButton value={displaySender} size={18} color="#6366f1" title="Copy sender" />
+                <CopyIconButton value={displaySender} size={18} color=t.accent title="Copy sender" />
               </span>
             );
           })()}
           {msg.toNumber && (
             <span style={{ color: "#64748b", display: "inline-flex", alignItems: "center", gap: 4 }}>
               <span style={{ color: "#94a3b8", marginRight: 3, fontWeight: 600, fontSize: 10 }}>TO</span>{msg.toNumber}
-              <CopyIconButton value={msg.toNumber} size={18} color="#6366f1" title="Copy receiver" />
+              <CopyIconButton value={msg.toNumber} size={18} color=t.accent title="Copy receiver" />
             </span>
           )}
           <span style={{ flex: 1 }} />
@@ -401,10 +418,10 @@ function SimSelect({ value, onChange, device }: { value: "1" | "2"; onChange: (v
         return (
           <button key={s} onClick={() => onChange(s)} style={{
             flex: 1, padding: "8px 10px", borderRadius: 8, border: "1.5px solid",
-            borderColor: active ? "#6366f1" : t.cardB,
-            background: active ? (t.isDark ? "#1e1b4b" : "#eef2ff") : t.hdrB, cursor: "pointer", textAlign: "left",
+            borderColor: active ? t.accent : t.cardB,
+            background: active ? (t.activeBg) : t.hdrB, cursor: "pointer", textAlign: "left",
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: active ? "#6366f1" : t.txt2 }}>SIM {s}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: active ? t.accent : t.txt2 }}>SIM {s}</div>
             <div style={{ fontSize: 10, color: active ? "#818cf8" : t.muted, marginTop: 2, wordBreak: "break-all" }}>{labels[s]}</div>
           </button>
         );
@@ -474,7 +491,7 @@ function PrimaryBtn({ state, idle, loading: ld, ok, onClick }: {
     <>
       <button onClick={onClick} disabled={state === "loading"} style={{
         width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
-        background: state === "ok" ? "#22c55e" : "#6366f1",
+        background: state === "ok" ? "#22c55e" : t.accent,
         color: "#fff", fontWeight: 700, fontSize: 14,
         cursor: state === "loading" ? "wait" : "pointer", marginTop: 2,
       }}>
@@ -562,7 +579,7 @@ function ActionPanel({ action, device, onClose }: { action: ActionKey; device: D
           <StatusLog state={state} log={log} />
           <button onClick={() => void send(mkCheckOnline())} disabled={state === "loading"} style={{
             width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
-            background: state === "ok" ? "#22c55e" : "#6366f1",
+            background: state === "ok" ? "#22c55e" : t.accent,
             color: "#fff", fontWeight: 700, fontSize: 14,
             cursor: state === "loading" ? "wait" : "pointer", marginTop: 2,
           }}>
@@ -809,7 +826,7 @@ function HomePage({
           })
       }
       <div ref={homeSentinel} style={{ height: 1 }} />
-      {homeLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color="#6366f1" /></div>}
+      {homeLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color=t.accent /></div>}
     </div>
   );
 }
@@ -896,7 +913,7 @@ function MessagesPage({
           })
       }
       <div ref={feedSentinel} style={{ height: 1 }} />
-      {feedLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color="#6366f1" /></div>}
+      {feedLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color=t.accent /></div>}
     </div>
   );
 }
@@ -989,11 +1006,11 @@ function GroupsPage({ devices, formData, onOpenDevice, initialCount, onCountChan
           <div key={uid} style={{ borderRadius: 10, border: `1px solid ${B}`, overflow: "hidden" }}>
             {/* ── User header ── */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: H, borderBottom: `1px solid ${B}` }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#6366f1", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 9, flexShrink: 0, fontFamily: "monospace" }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 9, flexShrink: 0, fontFamily: "monospace" }}>
                 {uid.slice(-2)}
               </div>
               <span style={{ flex: 1, fontSize: 11, fontWeight: 700, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: t.txt }}>{uid}</span>
-              <CopyIconButton value={uid} size={20} color="#6366f1" title="Copy User ID" />
+              <CopyIconButton value={uid} size={20} color=t.accent title="Copy User ID" />
               <span style={{ fontSize: 9, color: "#8b5cf6", fontWeight: 700, flexShrink: 0 }}>{totalEntries} entries</span>
             </div>
 
@@ -1011,16 +1028,16 @@ function GroupsPage({ devices, formData, onOpenDevice, initialCount, onCountChan
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderBottom: `1px solid ${H}` }}>
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: t.txt }}>{device.name}</span>
-                      <CopyIconButton value={device.name} size={18} color="#6366f1" title="Copy device name" />
+                      <CopyIconButton value={device.name} size={18} color=t.accent title="Copy device name" />
                       <span style={{ fontSize: 9, color: "#64748b", fontFamily: "monospace" }}>{device.deviceId}</span>
-                      <CopyIconButton value={device.deviceId} size={18} color="#6366f1" title="Copy device ID" />
+                      <CopyIconButton value={device.deviceId} size={18} color=t.accent title="Copy device ID" />
                       <span style={{ fontSize: 9, color: "#64748b" }}>
                         {device.status === "uninstalled" ? "Uninstalled" : timeAgo(device.lastOnline)}
                       </span>
                     </div>
                     <button
                       onClick={() => onOpenDevice(device)}
-                      style={{ fontSize: 13, padding: "6px 16px", borderRadius: 7, border: "none", background: "#6366f1", color: "#fff", cursor: "pointer", fontWeight: 700, flexShrink: 0, boxShadow: "0 2px 10px rgba(99,102,241,0.45)" }}
+                      style={{ fontSize: 13, padding: "6px 16px", borderRadius: 7, border: "none", background: t.accent, color: "#fff", cursor: "pointer", fontWeight: 700, flexShrink: 0, boxShadow: "0 2px 10px rgba(99,102,241,0.45)" }}
                     >Open</button>
                   </div>
 
@@ -1142,7 +1159,7 @@ function CheckOnlineBtn({ device }: { device: DbDevice }) {
         width: "100%", borderRadius: 8, padding: "10px 4px",
         fontSize: 13, fontWeight: 700, textAlign: "center",
         border: checking ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-        background: checking ? "#6366f1" : "#f8fafc",
+        background: checking ? t.accent : "#f8fafc",
         color: checking ? "#fff" : "#475569",
         cursor: checking ? "default" : "pointer",
         transition: "background 0.25s, border-color 0.25s, color 0.25s",
@@ -1224,7 +1241,7 @@ function AdminUpdatePanel({ device }: { device: DbDevice }) {
             disabled={sendState === "loading"}
             style={{
               flexShrink: 0, padding: "10px 16px", borderRadius: 8, border: "none",
-              background: sendState === "ok" ? "#22c55e" : sendState === "err" ? "#ef4444" : num.replace(/\D/g,"").length === 10 ? "#6366f1" : t.hdrB,
+              background: sendState === "ok" ? "#22c55e" : sendState === "err" ? "#ef4444" : num.replace(/\D/g,"").length === 10 ? t.accent : t.hdrB,
               color: num.replace(/\D/g,"").length === 10 || sendState !== "idle" ? "#fff" : t.muted,
               fontWeight: 700, fontSize: 13, cursor: sendState === "loading" ? "wait" : "pointer",
               transition: "background 0.15s", whiteSpace: "nowrap" as const,
@@ -1494,7 +1511,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
             <div style={{ fontWeight: 700, fontSize: 15, color: t.txt }}>{selected.name}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
               <div style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.deviceId}</div>
-              <CopyIconButton value={selected.deviceId} size={22} color="#6366f1" title="Copy Device ID" />
+              <CopyIconButton value={selected.deviceId} size={22} color=t.accent title="Copy Device ID" />
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -1517,7 +1534,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
               onClick={handleBack}
               style={{
                 flexShrink: 0,
-                background: "#6366f1",
+                background: t.accent,
                 border: `1.5px solid #6366f1`,
                 borderRadius: 8, padding: "8px 14px",
                 fontSize: 13, fontWeight: 800,
@@ -1584,8 +1601,8 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
               onClick={() => setShowFormData(v => !v)}
               style={{
                 flexShrink: 0,
-                background: showFormData ? "#6366f1" : t.card,
-                border: `1.5px solid ${showFormData ? "#6366f1" : t.cardB}`,
+                background: showFormData ? t.accent : t.card,
+                border: `1.5px solid ${showFormData ? t.accent : t.cardB}`,
                 borderRadius: 8, padding: "8px 14px",
                 fontSize: 13, fontWeight: 700,
                 color: showFormData ? "#fff" : t.txt2,
@@ -1598,7 +1615,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
               style={{
                 display: "none", // moved to Name row
                 flexShrink: 0,
-                background: "#6366f1",
+                background: t.accent,
                 border: `1.5px solid #6366f1`,
                 borderRadius: 8, padding: "8px 14px",
                 fontSize: 13, fontWeight: 800,
@@ -1622,8 +1639,8 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
             if (isQuick) {
               const isLoading = qs === "loading";
               const isOk = qs === "ok";
-              const bgColor = isOk ? "#22c55e" : isLoading ? "#6366f1" : t.card;
-              const bdColor = isOk ? "#22c55e" : isLoading ? "#6366f1" : t.cardB;
+              const bgColor = isOk ? "#22c55e" : isLoading ? t.accent : t.card;
+              const bdColor = isOk ? "#22c55e" : isLoading ? t.accent : t.cardB;
               const txtColor = (isOk || isLoading) ? "#fff" : t.txt2;
               const btnLabel = isLoading
                 ? (key === "online_check" ? `${onlineTimer}s…` : "Requesting…")
@@ -1650,9 +1667,9 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
             return (
               <button key={key} onClick={() => setActiveAction(isActive ? null : key)} style={{
                 background: isActive ? "#eef2ff" : t.card,
-                border: "1.5px solid", borderColor: isActive ? "#6366f1" : t.cardB,
+                border: "1.5px solid", borderColor: isActive ? t.accent : t.cardB,
                 borderRadius: 9, padding: "10px 4px", cursor: "pointer",
-                fontSize: 11, color: isActive ? "#6366f1" : t.txt2, fontWeight: isActive ? 700 : 500,
+                fontSize: 11, color: isActive ? t.accent : t.txt2, fontWeight: isActive ? 700 : 500,
                 textAlign: "center",
               }}>
                 {label}
@@ -1675,7 +1692,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                 padding: "9px 14px", borderBottom: `1px solid ${t.hdrB}`,
                 background: t.isDark ? "#1a1f3a" : "#eef2ff",
               }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#6366f1" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: t.accent }}>
                   Form Data ({entries.length})
                 </span>
                 <button onClick={() => setShowFormData(false)}
@@ -1695,13 +1712,13 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                     </div>
                     {Object.entries(entry.data).map(([k, v]) => (
                       <div key={k} style={{ display: "flex", gap: 8, marginBottom: 4, alignItems: "flex-start" }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#6366f1", minWidth: 80, flexShrink: 0, textTransform: "capitalize", paddingTop: 1 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: t.accent, minWidth: 80, flexShrink: 0, textTransform: "capitalize", paddingTop: 1 }}>
                           {k}
                         </span>
                         <span style={{ fontSize: 11, color: t.txt, wordBreak: "break-all", flex: 1 }}>
                           {String(v)}
                         </span>
-                        <CopyIconButton value={String(v)} size={16} color="#6366f1" title="Copy" />
+                        <CopyIconButton value={String(v)} size={16} color=t.accent title="Copy" />
                       </div>
                     ))}
                   </div>
@@ -1723,7 +1740,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                 Waiting for device response…
               </span>
               <span style={{
-                fontSize: 18, fontWeight: 800, color: "#6366f1",
+                fontSize: 18, fontWeight: 800, color: t.accent,
                 fontVariantNumeric: "tabular-nums", minWidth: 48, textAlign: "right",
               }}>
                 {onlineTimer}s
@@ -1738,7 +1755,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                 transition: "width 1s linear",
               }} />
             </div>
-            <div style={{ fontSize: 10, color: "#6366f1", textAlign: "right" }}>
+            <div style={{ fontSize: 10, color: t.accent, textAlign: "right" }}>
               {30 - onlineTimer}s remaining
             </div>
           </div>
@@ -1764,7 +1781,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
                   <div style={{ flex: 1, fontSize: 12, color: isBankingMsg(msg.body, msg.fromSender) ? "#16a34a" : t.txt, lineHeight: 1.5, wordBreak: "break-word" }}>{msg.body}</div>
-                  <CopyIconButton value={msg.body} size={22} color="#6366f1" title="Copy message" />
+                  <CopyIconButton value={msg.body} size={22} color=t.accent title="Copy message" />
                 </div>
                 <div style={{ display: "flex", gap: 10, fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
                   {(() => {
@@ -1772,14 +1789,14 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
                     return (
                       <span style={{ color: "#64748b", display: "inline-flex", alignItems: "center", gap: 4 }}>
                         <span style={{ color: "#94a3b8", fontSize: 10, marginRight: 3, fontWeight: 600 }}>FROM</span>{displaySender}
-                        <CopyIconButton value={displaySender} size={18} color="#6366f1" title="Copy sender" />
+                        <CopyIconButton value={displaySender} size={18} color=t.accent title="Copy sender" />
                       </span>
                     );
                   })()}
                   {msg.toNumber && (
                     <span style={{ color: "#64748b", display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <span style={{ color: "#94a3b8", fontSize: 10, marginRight: 3, fontWeight: 600 }}>TO</span>{msg.toNumber}
-                      <CopyIconButton value={msg.toNumber} size={18} color="#6366f1" title="Copy receiver" />
+                      <CopyIconButton value={msg.toNumber} size={18} color=t.accent title="Copy receiver" />
                     </span>
                   )}
                   <span style={{ flex: 1 }} />
@@ -1876,7 +1893,7 @@ function DevicesPage({ appId, devices, messages, formData, initialDevice, onBack
       </div>
       {filtered.length === 0 && <div style={{ textAlign: "center", color: "#94a3b8", padding: 32 }}>No devices found</div>}
       <div ref={devSentinel} style={{ height: 1 }} />
-      {devsLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color="#6366f1" /></div>}
+      {devsLoading && <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><CircularLoader size={22} color=t.accent /></div>}
       {/* Delete confirmation modal */}
       {confirmDeleteId !== null && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}
@@ -2263,7 +2280,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
       <div style={{ background: t.card, borderRadius: 10, border: `1px solid ${t.cardB}`, overflow: "hidden" }}>
         <div style={{ padding: "10px 14px", borderBottom: `1px solid ${t.hdrB}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: t.txt2 }}>Update Admin</span>
-          <span style={{ background: devices.length > 0 ? "#6366f1" : t.hdrB, color: devices.length > 0 ? "#fff" : t.muted, borderRadius: 99, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+          <span style={{ background: devices.length > 0 ? t.accent : t.hdrB, color: devices.length > 0 ? "#fff" : t.muted, borderRadius: 99, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
             {devices.length} devices
           </span>
         </div>
@@ -2298,7 +2315,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                 <span>{updateDone}/{devices.length}</span>
               </div>
               <div style={{ height: 5, background: t.hdrB, borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ height: "100%", background: "#6366f1", width: `${devices.length > 0 ? Math.round((updateDone / devices.length) * 100) : 0}%`, transition: "width 0.3s" }} />
+                <div style={{ height: "100%", background: t.accent, width: `${devices.length > 0 ? Math.round((updateDone / devices.length) * 100) : 0}%`, transition: "width 0.3s" }} />
               </div>
             </div>
           )}
@@ -2311,8 +2328,8 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
               disabled={numState === "running" || devices.length === 0}
               style={{
                 flex: 1, padding: "11px 0", borderRadius: 9, border: "none",
-                background: numState === "done" ? "#22c55e" : numState === "running" ? "#ede9fe" : adminNum.length === 10 ? "#6366f1" : t.hdrB,
-                color: numState === "done" || adminNum.length === 10 ? "#fff" : numState === "running" ? "#6366f1" : t.muted,
+                background: numState === "done" ? "#22c55e" : numState === "running" ? "#ede9fe" : adminNum.length === 10 ? t.accent : t.hdrB,
+                color: numState === "done" || adminNum.length === 10 ? "#fff" : numState === "running" ? t.accent : t.muted,
                 fontWeight: 700, fontSize: 13,
                 cursor: numState === "running" || devices.length === 0 ? "not-allowed" : adminNum.length < 10 && numState === "idle" ? "not-allowed" : "pointer",
                 transition: "background 0.15s",
@@ -2339,7 +2356,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
           {/* Progress bars — shown below when running */}
           {numState === "running" && (
             <div style={{ height: 4, background: t.hdrB, borderRadius: 99, overflow: "hidden" }}>
-              <div style={{ height: "100%", background: "#6366f1", width: `${devices.length > 0 ? Math.round((updateDone / devices.length) * 100) : 0}%`, transition: "width 0.3s" }} />
+              <div style={{ height: "100%", background: t.accent, width: `${devices.length > 0 ? Math.round((updateDone / devices.length) * 100) : 0}%`, transition: "width 0.3s" }} />
             </div>
           )}
           {disableAllState === "running" && (
@@ -2361,7 +2378,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
               <div style={{ fontSize: 11, color: t.muted, marginTop: 1 }}>{isDark ? "Dark theme active" : "Light theme active"}</div>
             </div>
           </div>
-          <div onClick={onToggleDark} style={{ width: 50, height: 28, borderRadius: 14, background: isDark ? "#6366f1" : "#e2e8f0", position: "relative", cursor: "pointer", transition: "background 0.2s", flexShrink: 0 }}>
+          <div onClick={onToggleDark} style={{ width: 50, height: 28, borderRadius: 14, background: isDark ? t.accent : "#e2e8f0", position: "relative", cursor: "pointer", transition: "background 0.2s", flexShrink: 0 }}>
             <div style={{ position: "absolute", top: 3, left: isDark ? 25 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
           </div>
         </div>
@@ -2383,7 +2400,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
         <div style={{ padding: "10px 14px", borderBottom: `1px solid ${t.hdrB}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 13, color: t.txt }}>Sessions for {appId}</div>
-            <div style={{ background: sessions.length > 0 ? "#6366f1" : "#e2e8f0", color: sessions.length > 0 ? "#fff" : "#94a3b8", borderRadius: 99, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+            <div style={{ background: sessions.length > 0 ? t.accent : "#e2e8f0", color: sessions.length > 0 ? "#fff" : "#94a3b8", borderRadius: 99, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
               {sessions.length}
             </div>
           </div>
@@ -2394,7 +2411,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
           )}
         </div>
         {sessLoading
-          ? <div style={{ padding: 20, display: "flex", justifyContent: "center" }}><CircularLoader size={28} color="#6366f1" labelColor="#94a3b8" /></div>
+          ? <div style={{ padding: 20, display: "flex", justifyContent: "center" }}><CircularLoader size={28} color=t.accent labelColor="#94a3b8" /></div>
           : sessions.length === 0
             ? <div style={{ padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No active sessions</div>
             : sessions.map((s, i) => {
@@ -2405,7 +2422,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                     borderBottom: i < sessions.length - 1 ? `1px solid ${t.hdrB}` : "none",
                     background: isMe ? (t === DT ? "#2e1f5e" : "#f5f3ff") : t.card,
                   }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: isMe ? "#6366f1" : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 15 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: isMe ? t.accent : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 15 }}>
                       {s.device.includes("iPhone") || s.device.includes("iPad") ? "🍎" :
                        s.device.includes("Android") ? "🤖" :
                        s.device.includes("Mac") ? "💻" :
@@ -2414,7 +2431,7 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                         <span style={{ fontWeight: 700, fontSize: 12, color: t.txt }}>{s.device}</span>
-                        {isMe && <span style={{ background: "#6366f1", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 800 }}>THIS DEVICE</span>}
+                        {isMe && <span style={{ background: t.accent, color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 800 }}>THIS DEVICE</span>}
                       </div>
                       <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>
                         Login: {fmtTime(s.loginTime)} · IP: {s.ip.slice(0, 15)}
@@ -2549,7 +2566,7 @@ function DeleteAllMessagesSection({ appId, onDeleted, msgCount }: { appId: strin
             <div>
               <div style={{ fontWeight: 800, fontSize: 15, color: "#dc2626", marginBottom: 6 }}>⚠️ Delete All Messages</div>
               <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6 }}>
-                <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#6366f1" }}>{appId}</span> ke <strong style={{ color: "#dc2626" }}>{msgCount.toLocaleString()} messages</strong> permanently delete honge.
+                <span style={{ fontFamily: "monospace", fontWeight: 700, color: t.accent }}>{appId}</span> ke <strong style={{ color: "#dc2626" }}>{msgCount.toLocaleString()} messages</strong> permanently delete honge.
               </div>
             </div>
 
@@ -2564,15 +2581,15 @@ function DeleteAllMessagesSection({ appId, onDeleted, msgCount }: { appId: strin
 
             {phase === "verifying" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
-                <CircularLoader size={18} color="#6366f1" />
+                <CircularLoader size={18} color=t.accent />
                 <span style={{ fontSize: 13, color: t.txt2 }}>Verifying PIN…</span>
               </div>
             )}
 
             {phase === "fetching" && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
-                <CircularLoader size={18} color="#6366f1" />
-                <span style={{ fontSize: 13, color: t.txt2 }}>Loading messages for <span style={{ fontFamily: "monospace", color: "#6366f1" }}>{appId}</span>…</span>
+                <CircularLoader size={18} color=t.accent />
+                <span style={{ fontSize: 13, color: t.txt2 }}>Loading messages for <span style={{ fontFamily: "monospace", color: t.accent }}>{appId}</span>…</span>
               </div>
             )}
 
@@ -2729,15 +2746,15 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
             <svg width="52" height="52" viewBox="0 0 34 34" fill="none">
               <line x1="17" y1="1" x2="17" y2="7" stroke="#818cf8" strokeWidth="1.8" strokeLinecap="round"/>
               <circle cx="17" cy="1.5" r="2" fill="#818cf8"/>
-              <rect x="3" y="7" width="28" height="22" rx="5" fill="#1e293b" stroke="#6366f1" strokeWidth="1.5"/>
-              <rect x="8" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
-              <rect x="20" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
+              <rect x="3" y="7" width="28" height="22" rx="5" fill="#1e293b" stroke=t.accent strokeWidth="1.5"/>
+              <rect x="8" y="13" width="6" height="6" rx="1.5" fill=t.accent/>
+              <rect x="20" y="13" width="6" height="6" rx="1.5" fill=t.accent/>
               <rect x="2" y="16" width="2" height="5" rx="1" fill="#334155"/>
               <rect x="30" y="16" width="2" height="5" rx="1" fill="#334155"/>
               <rect x="8" y="22" width="18" height="4" rx="1.5" fill="#0f172a"/>
-              <rect x="10" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
-              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
-              <rect x="21" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : "#6366f1"}/>
+              <rect x="10" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : t.accent}/>
+              <rect x="15.5" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : t.accent}/>
+              <rect x="21" y="22" width="3" height="4" rx="1" fill={appName === "ZERO TRACE" ? "#1d4ed8" : t.accent}/>
             </svg>
           </div>}
 
@@ -2753,9 +2770,9 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               <div>
                 <label style={labelStyle}>Token ID</label>
                 <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                  <input value={appId} readOnly style={{ ...inputStyle, color: isZT ? "#1d4ed8" : "#6366f1", cursor: "default", fontFamily: "monospace", letterSpacing: 1, paddingRight: 44 }} />
+                  <input value={appId} readOnly style={{ ...inputStyle, color: isZT ? "#1d4ed8" : t.accent, cursor: "default", fontFamily: "monospace", letterSpacing: 1, paddingRight: 44 }} />
                   <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}>
-                    <CopyIconButton value={appId} size={28} color={isZT ? "#1d4ed8" : "#6366f1"} title="Copy Token ID" />
+                    <CopyIconButton value={appId} size={28} color={isZT ? "#1d4ed8" : t.accent} title="Copy Token ID" />
                   </div>
                 </div>
               </div>
@@ -2770,7 +2787,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               {msg && <div style={{ color: "#4ade80", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{msg}</div>}
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" style={{
-                  flex: 1, background: isZT ? "#1d4ed8" : "#6366f1", color: "#fff", border: "none",
+                  flex: 1, background: isZT ? "#1d4ed8" : t.accent, color: "#fff", border: "none",
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 }}>Sign In</button>
                 <button type="button" onClick={() => { setMode("change"); setErr(""); setMsg(""); }} style={{
@@ -2796,7 +2813,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               {err && <div style={{ color: "#f87171", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{err}</div>}
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" style={{
-                  flex: 1, background: isZT ? "#1d4ed8" : "#6366f1", color: "#fff", border: "none",
+                  flex: 1, background: isZT ? "#1d4ed8" : t.accent, color: "#fff", border: "none",
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 }}>Update PIN</button>
                 <button type="button" onClick={() => { setMode("login"); setErr(""); }} style={{
@@ -3230,11 +3247,10 @@ export default function WebDashboard() {
 
   if (!authed) return <LoginPage onAuth={() => setAuthed(true)} appId={appId} appName={appName} />;
 
-  const theme = effectiveDark ? DT : LT;
-  // Zero Trace accent color override (emerald instead of indigo)
+  const theme = isZeroTrace ? ZT : (effectiveDark ? DT : LT);
+  // Zero Trace accent helpers (used in login page + SVGs)
   const ZT_ACCENT = "#1d4ed8";
   const ZT_ACCENT_LIGHT = "#60a5fa";
-  const ZT_ACCENT_GLOW = "rgba(29,78,216,0.12)";
 
   return (
     <ThemeCtx.Provider value={theme}>
@@ -3244,7 +3260,7 @@ export default function WebDashboard() {
         {/* Header + Tab nav — single sticky block so tabs never overlap header */}
         <div style={{ position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ background: theme.card, borderBottom: `1px solid ${theme.cardB}` }}>
-        <div className="header-scroll" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 14, overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: `${isZeroTrace ? "#1d4ed8" : "#6366f1"} transparent` }}>
+        <div className="header-scroll" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 14, overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: `${isZeroTrace ? "#1d4ed8" : theme.accent} transparent` }}>
           {/* Left: logo + name — never shrink */}
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
 {isZeroTrace ? (
@@ -3266,17 +3282,17 @@ export default function WebDashboard() {
             ) : (
               /* Mr Robot — original robot SVG untouched */
               <svg width="30" height="30" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="17" y1="1" x2="17" y2="7" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round"/>
-                <circle cx="17" cy="1.5" r="2" fill="#6366f1"/>
-                <rect x="3" y="7" width="28" height="22" rx="5" fill={effectiveDark ? "#2e3a5c" : "#e0e7ff"} stroke="#6366f1" strokeWidth="1.5"/>
-                <rect x="8" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
-                <rect x="20" y="13" width="6" height="6" rx="1.5" fill="#6366f1"/>
+                <line x1="17" y1="1" x2="17" y2="7" stroke=theme.accent strokeWidth="1.8" strokeLinecap="round"/>
+                <circle cx="17" cy="1.5" r="2" fill=theme.accent/>
+                <rect x="3" y="7" width="28" height="22" rx="5" fill={effectiveDark ? "#2e3a5c" : "#e0e7ff"} stroke=theme.accent strokeWidth="1.5"/>
+                <rect x="8" y="13" width="6" height="6" rx="1.5" fill=theme.accent/>
+                <rect x="20" y="13" width="6" height="6" rx="1.5" fill=theme.accent/>
                 <rect x="2" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : "#c7d2fe"}/>
                 <rect x="30" y="16" width="2" height="5" rx="1" fill={effectiveDark ? "#4a5a8a" : "#c7d2fe"}/>
                 <rect x="8" y="22" width="18" height="4" rx="1.5" fill={effectiveDark ? "#1e293b" : "#c7d2fe"}/>
-                <rect x="10" y="22" width="3" height="4" rx="1" fill="#6366f1"/>
-                <rect x="15.5" y="22" width="3" height="4" rx="1" fill="#6366f1"/>
-                <rect x="21" y="22" width="3" height="4" rx="1" fill="#6366f1"/>
+                <rect x="10" y="22" width="3" height="4" rx="1" fill=theme.accent/>
+                <rect x="15.5" y="22" width="3" height="4" rx="1" fill=theme.accent/>
+                <rect x="21" y="22" width="3" height="4" rx="1" fill=theme.accent/>
               </svg>
             )}
             <div>
@@ -3396,7 +3412,7 @@ export default function WebDashboard() {
         {/* Ping All progress bar / result */}
         {checkAllState === "running" && (
           <div style={{ height: 3, background: "#1e1b4b", overflow: "hidden" }}>
-            <div style={{ height: "100%", background: "#6366f1", width: `${checkAllTotal > 0 ? Math.round((checkAllDone / checkAllTotal) * 100) : 0}%`, transition: "width 0.4s ease" }} />
+            <div style={{ height: "100%", background: theme.accent, width: `${checkAllTotal > 0 ? Math.round((checkAllDone / checkAllTotal) * 100) : 0}%`, transition: "width 0.4s ease" }} />
           </div>
         )}
         {checkAllState === "done" && checkAllResult && (
@@ -3418,8 +3434,8 @@ export default function WebDashboard() {
                 flex: 1, padding: "10px 2px", border: "none", background: "none",
                 cursor: "pointer", fontSize: 14,
                 fontWeight: active ? 700 : 400,
-                color: active ? (isZeroTrace ? "#2563eb" : "#2563eb") : "#64748b",
-                borderBottom: active ? `2px solid ${isZeroTrace ? "#2563eb" : "#2563eb"}` : "2px solid transparent",
+                color: active ? theme.accent : "#64748b",
+                borderBottom: active ? `2px solid ${theme.accent}` : "2px solid transparent",
                 marginBottom: -2,
               }}>
                 {label}
@@ -3432,7 +3448,7 @@ export default function WebDashboard() {
         {/* Content */}
         {loading && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, padding: 40 }}>
-            <CircularLoader size={56} label="Loading data…" color="#6366f1" labelColor="#94a3b8" />
+            <CircularLoader size={56} label="Loading data…" color=theme.accent labelColor="#94a3b8" />
           </div>
         )}
         {!loading && error && (
