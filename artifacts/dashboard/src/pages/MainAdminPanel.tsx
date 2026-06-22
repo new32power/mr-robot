@@ -18,7 +18,7 @@ const T = {
 
 type App = {
   id: number; appId: string; name: string; pin: string;
-  status: string; loginLimit: number; activeSessions: number; createdAt: string;
+  status: string; createdAt: string;
   deleteProtectionPin: string | null;
   deleteProtectionEnabled: boolean;
 };
@@ -336,7 +336,7 @@ function EditAppModal({ app, masterPin, onClose, onUpdated }: { app: App; master
     try {
       const r = await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ name: name.trim(), pin }) });
       if (!r.ok) { const j = await r.json() as { error?: string }; setErr(j.error ?? "Failed"); return; }
-      onUpdated({ ...await r.json() as App, activeSessions: app.activeSessions });
+      onUpdated(await r.json() as App);
     } catch { setErr("Network error"); } finally { setLoading(false); }
   }
 
@@ -526,7 +526,8 @@ function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, onRe
   copyMsg: Record<string, string>; deletingId: string | null; togglingId: string | null; logoutAllId: string | null; resetApkId: string | null;
 }) {
   const isActive = app.status === "active";
-  const dateStr = new Date(app.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const dt = new Date(app.createdAt);
+  const dateStr = dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) + " · " + dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
   return (
       <div style={{ background:T.card, borderRadius:16, border:`1px solid ${T.borderLight}`, overflow:"hidden", transition:"all 0.2s", position:"relative", boxShadow:"0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ position:"absolute", left:0, top:0, bottom:0, width:3, background:isActive?`linear-gradient(180deg,${T.green},#4ade80)`:`linear-gradient(180deg,${T.red},#f87171)` }} />
@@ -540,10 +541,7 @@ function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, onRe
               <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:10, fontWeight:700, padding:"3px 9px", borderRadius:99, color:isActive?T.green:T.red, background:(isActive?T.green:T.red)+"18", border:`1px solid ${(isActive?T.green:T.red)}30` }}>
                 <span style={{ width:5, height:5, borderRadius:"50%", background:isActive?T.green:T.red, display:"inline-block" }} />{isActive?"Active":"Off"}
               </span>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:13, fontWeight:900, color:T.text, lineHeight:1 }}>{app.activeSessions}<span style={{ color:T.muted, fontWeight:500, fontSize:11 }}>/{app.loginLimit}</span></div>
-                <div style={{ fontSize:9, color:T.muted, textTransform:"uppercase", letterSpacing:0.5 }}>users</div>
-              </div>
+
             </div>
           </div>
           <div style={{ display:"flex", gap:8, marginBottom:11 }}>
@@ -706,7 +704,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     setLogoutAllId(app.appId);
     try {
       await apiFetch(`/api/admin/sessions?appId=${encodeURIComponent(app.appId)}`, { method: "DELETE" });
-      setAppList(prev => prev.map(a => a.appId === app.appId ? { ...a, activeSessions: 0 } : a));
+      setAppList(prev => prev.map(a => a.appId === app.appId ? { ...a } : a));
     } catch { /* ignore */ } finally { setLogoutAllId(null); }
   }
 
