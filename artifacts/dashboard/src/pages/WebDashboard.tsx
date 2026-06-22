@@ -2107,6 +2107,8 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
   const [dpEnabled, setDpEnabled] = useState(false);
   const [dpHasPin, setDpHasPin] = useState(false);
   const [dpLoaded, setDpLoaded] = useState(false);
+  const [licenceCreatedAt, setLicenceCreatedAt] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState<{ days: number; hours: number; mins: number; secs: number; expired: boolean } | null>(null);
   const [dpLoading, setDpLoading] = useState(false);
   const [dpPinInput, setDpPinInput] = useState("");
   const [dpCurrentPin, setDpCurrentPin] = useState("");
@@ -2125,6 +2127,32 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
         onDeleteProtEnabledChange(d.enabled);
       }).catch(() => setDpLoaded(true));
   }, [appId]);
+
+  // Fetch licence createdAt
+  useEffect(() => {
+    apiFetch(`/api/apps/${appId}`).then(r => r.ok ? r.json() : null).then((app: { createdAt?: string } | null) => {
+      if (app?.createdAt) setLicenceCreatedAt(new Date(app.createdAt).getTime());
+    }).catch(() => {});
+  }, [appId]);
+
+  // Countdown tick every second
+  useEffect(() => {
+    if (licenceCreatedAt === null) return;
+    function tick() {
+      const THIRTY_MS = 30 * 24 * 60 * 60 * 1000;
+      const expiry = licenceCreatedAt! + THIRTY_MS;
+      const diff = expiry - Date.now();
+      if (diff <= 0) { setCountdown({ days: 0, hours: 0, mins: 0, secs: 0, expired: true }); return; }
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setCountdown({ days, hours, mins, secs, expired: false });
+    }
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [licenceCreatedAt]);
 
   async function dpSetPin() {
     setDpLoading(true); setDpSetErr("");
@@ -2285,6 +2313,39 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
 
   return (
     <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+
+        {/* ── Licence Countdown ── */}
+      {countdown && (
+        <div style={{ background: countdown.expired ? (t === DT ? "#3f0f0f" : "#fef2f2") : (t === DT ? "#0f1f0f" : "#f0fdf4"), borderRadius: 12, border: `1.5px solid ${countdown.expired ? "#ef444460" : "#22c55e60"}`, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={countdown.expired ? "#ef4444" : "#22c55e"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span style={{ fontWeight: 800, fontSize: 13, color: countdown.expired ? "#ef4444" : (t === DT ? "#4ade80" : "#16a34a") }}>
+              {countdown.expired ? "Licence Expired" : "Licence Active"}
+            </span>
+          </div>
+          {countdown.expired ? (
+            <div style={{ fontSize: 12, color: countdown.expired ? "#ef4444" : "#22c55e", fontWeight: 600 }}>
+              Your 30-day licence has expired. Please contact admin to renew.
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[
+                { val: countdown.days, label: "Days" },
+                { val: countdown.hours, label: "Hours" },
+                { val: countdown.mins, label: "Mins" },
+                { val: countdown.secs, label: "Secs" },
+              ].map(({ val, label }) => (
+                <div key={label} style={{ flex: "1 1 60px", background: t === DT ? "rgba(34,197,94,0.10)" : "rgba(34,197,94,0.12)", borderRadius: 9, border: "1px solid #22c55e30", padding: "8px 6px", textAlign: "center", minWidth: 52 }}>
+                  <div style={{ fontWeight: 800, fontSize: 22, color: t === DT ? "#4ade80" : "#16a34a", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{String(val).padStart(2, "0")}</div>
+                  <div style={{ fontSize: 9, color: t === DT ? "#86efac" : "#15803d", marginTop: 3, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── APK Downloads Row ── */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
