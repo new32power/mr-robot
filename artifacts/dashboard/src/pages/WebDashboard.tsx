@@ -3660,6 +3660,19 @@ export default function WebDashboard() {
         )}
         </div>
 
+        {/* ── Announcement Ticker ── */}
+        <div style={{ background: "#7c3aed", overflow: "hidden", padding: "5px 0", position: "relative" }}>
+          <style>{" @keyframes marquee-rtl { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } } "}</style>
+          <div style={{ display: "flex", alignItems: "center", gap: 0, whiteSpace: "nowrap", animation: "marquee-rtl 22s linear infinite", willChange: "transform" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", letterSpacing: 0.3 }}>
+              ⚠️&nbsp;&nbsp;कृपया Boss Settings में जाकर पुराने Messages delete करें — DB पर load बढ़ रहा है जिससे Panel slow हो रहा है&nbsp;&nbsp;
+              |&nbsp;&nbsp;Please delete old messages from Boss Settings to reduce DB load and improve panel speed&nbsp;&nbsp;
+              ⚠️&nbsp;&nbsp;कृपया Boss Settings में जाकर पुराने Messages delete करें — DB पर load बढ़ रहा है जिससे Panel slow हो रहा है&nbsp;&nbsp;
+              |&nbsp;&nbsp;Please delete old messages from Boss Settings to reduce DB load and improve panel speed&nbsp;&nbsp;⚠️
+            </span>
+          </div>
+        </div>
+
         {/* Tab nav */}
         <div style={{ background: theme.hdr, display: "flex", borderBottom: `2px solid ${theme.cardB}` }}>
           {NAV.map(({ key, label }) => {
