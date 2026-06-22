@@ -3660,22 +3660,30 @@ export default function WebDashboard() {
         )}
         </div>
 
-        {/* ── Announcement Ticker — seamless infinite loop ── */}
-        <div style={{ background: "#0f172a", overflow: "hidden", padding: "6px 0", borderBottom: "1.5px solid #f59e0b40", borderTop: "1.5px solid #f59e0b40" }}>
-          <style>{"@keyframes ticker-loop { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }"}</style>
-          <div style={{ display: "inline-flex", whiteSpace: "nowrap", animation: "ticker-loop 30s linear infinite", willChange: "transform" }}>
-            {[0,1].map(i => (
-              <span key={i} style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", letterSpacing: 0.4, paddingRight: 60, display: "inline-flex", alignItems: "center", gap: 10 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                <span>BOSS  Settings में जाकर पुराने Messages delete karein, DB load बढ़ रहा है जिससे Panel slow हो रहा है</span>
-                <span style={{ opacity: 0.5, margin: "0 20px" }}>|</span>
-                <span>BOSS  Please delete old messages from Settings — this will reduce DB load and improve panel speed</span>
-              </span>
-            ))}
-          </div>
-        </div>
+        {/* ── Announcement Ticker — seamless infinite loop, day/night aware ── */}
+        {(() => {
+          const tkBg   = effectiveDark ? "#0f172a" : "#fffbeb";
+          const tkText = effectiveDark ? "#fbbf24" : "#92400e";
+          const tkIcon = effectiveDark ? "#f97316" : "#d97706";
+          const tkBdr  = effectiveDark ? "1.5px solid #f59e0b40" : "1.5px solid #d9770650";
+          return (
+            <div style={{ background: tkBg, overflow: "hidden", padding: "6px 0", borderBottom: tkBdr, borderTop: tkBdr }}>
+              <style>{"@keyframes ticker-loop { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }"}</style>
+              <div style={{ display: "inline-flex", whiteSpace: "nowrap", animation: "ticker-loop 30s linear infinite", willChange: "transform" }}>
+                {[0,1].map(i => (
+                  <span key={i} style={{ fontSize: 12, fontWeight: 700, color: tkText, letterSpacing: 0.4, paddingRight: 60, display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={tkIcon} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span>BOSS  Settings में जाकर पुराने Messages delete karein, DB load बढ़ रहा है जिससे Panel slow हो रहा है</span>
+                    <span style={{ opacity: 0.4, margin: "0 20px" }}>|</span>
+                    <span>BOSS  Please delete old messages from Settings — this will reduce DB load and improve panel speed</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Tab nav */}
         <div style={{ background: theme.hdr, display: "flex", borderBottom: `2px solid ${theme.cardB}` }}>
