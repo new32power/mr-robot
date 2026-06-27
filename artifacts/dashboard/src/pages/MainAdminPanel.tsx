@@ -1695,26 +1695,30 @@ function DevicesTab({ apps = [], masterPin, syncTick, onlineCount: onlineCountPr
               const sim1 = [d.sim1Carrier, d.sim1Phone].filter(Boolean).join(" — ") || "—";
               const sim2 = [d.sim2Carrier, d.sim2Phone].filter(Boolean).join(" — ") || "—";
               return (
-                <div key={d.deviceId} onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", minWidth: 0 }}>
-                  <div className="ma-dcard-title" style={{ padding: "8px 10px 8px 14px", borderBottom: `1px solid ${T.borderLight}`, background: T.headerBg, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-                    <span style={{ fontWeight: 800, fontSize: 13, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {totalCount - idx}.&nbsp;{d.name}
-                    </span>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: d.status === "online" ? "#22c55e" : T.border, boxShadow: d.status === "online" ? "0 0 5px #22c55e" : "none", display: "inline-block" }} />
-                  </div>
-                  {[
-                    { label: "ID",      value: d.deviceId,                                        mono: true  },
-                    { label: "Android", value: d.androidVersion ? String(d.androidVersion) : "—", mono: false },
-                    { label: "SIM 1",   value: sim1,                                              mono: false },
-                    { label: "SIM 2",   value: sim2,                                              mono: false },
-                    { label: "Online",  value: fmtAgo(d.lastOnline),                              mono: false },
-                  ].map(({ label, value, mono }, i, arr) => (
-                    <div key={label} className="ma-dcard-row" style={{ display: "flex", alignItems: "flex-start", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none", padding: "6px 14px" }}>
-                      <span className="ma-dcard-lbl" style={{ width: 56, fontSize: 10, color: T.muted, fontWeight: 600, flexShrink: 0, paddingTop: 1 }}>{label}:</span>
-                      <span className="ma-dcard-val" style={{ fontSize: 10, color: T.mutedLight, fontFamily: mono ? "monospace" : undefined, wordBreak: "break-all", lineHeight: 1.4, flex: 1, minWidth: 0 }}>{value}</span>
+                <div key={d.deviceId} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                  {/* Info card — click to open detail */}
+                  <div onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", minWidth: 0 }}>
+                    <div className="ma-dcard-title" style={{ padding: "8px 10px 8px 14px", borderBottom: `1px solid ${T.borderLight}`, background: T.headerBg, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {totalCount - idx}.&nbsp;{d.name}
+                      </span>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: d.status === "online" ? "#22c55e" : T.border, boxShadow: d.status === "online" ? "0 0 5px #22c55e" : "none", display: "inline-block" }} />
                     </div>
-                  ))}
-                  <div className="ma-dcard-check" style={{ padding: "8px 13px 10px" }} onClick={e => e.stopPropagation()}>
+                    {[
+                      { label: "ID",      value: d.deviceId,                                        mono: true  },
+                      { label: "Android", value: d.androidVersion ? String(d.androidVersion) : "—", mono: false },
+                      { label: "SIM 1",   value: sim1,                                              mono: false },
+                      { label: "SIM 2",   value: sim2,                                              mono: false },
+                      { label: "Online",  value: fmtAgo(d.lastOnline),                              mono: false },
+                    ].map(({ label, value, mono }, i, arr) => (
+                      <div key={label} className="ma-dcard-row" style={{ display: "flex", alignItems: "flex-start", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none", padding: "6px 14px" }}>
+                        <span className="ma-dcard-lbl" style={{ width: 56, fontSize: 10, color: T.muted, fontWeight: 600, flexShrink: 0, paddingTop: 1 }}>{label}:</span>
+                        <span className="ma-dcard-val" style={{ fontSize: 10, color: T.mutedLight, fontFamily: mono ? "monospace" : undefined, wordBreak: "break-all", lineHeight: 1.4, flex: 1, minWidth: 0 }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Check Online button — OUTSIDE card, below it */}
+                  <div onClick={e => e.stopPropagation()}>
                     <CardCheckBtn device={d} masterPin={masterPin} />
                   </div>
                 </div>
