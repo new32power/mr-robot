@@ -535,6 +535,17 @@ function MessagesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
   const [visibleCount, setVisibleCount] = useState(30);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  /* Total count in DB (for this appFilter) — fetched once, updated on appFilter change */
+  const [totalDbCount, setTotalDbCount] = useState<number | null>(null);
+  useEffect(() => {
+    setTotalDbCount(null);
+    const qs = appFilter ? `?appId=${encodeURIComponent(appFilter)}` : "";
+    apiFetch(`/api/messages/count${qs}`, { headers: { "x-master-pin": masterPin } })
+      .then(r => r.ok ? r.json() as Promise<{ count: number }> : null)
+      .then(d => d && setTotalDbCount(d.count))
+      .catch(() => {});
+  }, [appFilter, masterPin]);
+
   /* Debounce search — 400ms so server isn't hammered on each keystroke */
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
@@ -623,12 +634,27 @@ function MessagesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
         </button>
       </div>
 
-      <div style={{ fontSize: 10, color: "#64748b" }}>
-        {debouncedSearch
-          ? <><span style={{ color: T.accentLight }}>🔍 DB search:</span> {filtered.length} result{filtered.length !== 1 ? "s" : ""} for "{debouncedSearch}"</>
-          : <>{filtered.length !== msgs.length ? `${filtered.length} of ` : ""}{msgs.length} message{msgs.length !== 1 ? "s" : ""}</>
-        }
-        {visibleCount < filtered.length && <span> · showing {visibleCount}</span>}
+      <div style={{ fontSize: 10, color: "#64748b", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {/* Total in DB — always shown */}
+        <span style={{ background: T.accentGlow, color: T.accentLight, borderRadius: 99, padding: "2px 9px", fontWeight: 700, fontSize: 10 }}>
+          DB Total: {totalDbCount !== null ? totalDbCount.toLocaleString() : "…"}
+        </span>
+        {debouncedSearch ? (
+          <span>
+            <span style={{ color: T.accentLight }}>🔍</span>{" "}
+            <b style={{ color: T.text }}>{filtered.length.toLocaleString()}</b> results for "{debouncedSearch}"
+            {totalDbCount !== null && <span style={{ color: T.muted }}> — searched all {totalDbCount.toLocaleString()} messages</span>}
+          </span>
+        ) : (
+          <span>
+            Batch: <b style={{ color: T.text }}>{msgs.length.toLocaleString()}</b>
+            {totalDbCount !== null && msgs.length < totalDbCount && (
+              <span style={{ color: T.muted }}> of {totalDbCount.toLocaleString()} total</span>
+            )}
+            {sensitiveOnly && filtered.length !== msgs.length && <span style={{ color: T.red }}> · {filtered.length} sensitive</span>}
+          </span>
+        )}
+        {visibleCount < filtered.length && <span style={{ color: T.muted }}>· showing {visibleCount}</span>}
       </div>
 
       {isLoading && msgs.length === 0 ? (
