@@ -627,24 +627,37 @@ function MessagesTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; ma
     } catch { } finally { setLoadingMore(false); }
   }, [appFilter, masterPin, hasMore, loadingMore]);
 
-  /* ── SEARCH: paginated ILIKE — 100 per page, stops DB scan early ── */
+  /* ── SEARCH: auto-load all pages until no more (max 10 pages = 1000 results) ── */
   const runSearch = useCallback(async (term: string) => {
     setSearching(true); setSearchDone(false); setSearchHasMore(false); setSearchOffset(0);
-    setMsgs([]); cursorRef.current = null; setHasMore(false);
+    cursorRef.current = null; setHasMore(false);
+    // keep old msgs visible while loading — replace only when first batch arrives
+    let firstBatch = true;
+    let offset = 0;
+    const MAX_AUTO_PAGES = 10; // auto-fetch up to 1000 results
     try {
-      const qs = new URLSearchParams({ search: term, limit: String(SEARCH_PAGE), offset: "0" });
-      if (appFilter) qs.set("appId", appFilter);
-      const r = await apiFetch(`/api/messages?${qs}`, { headers: { "x-master-pin": masterPin } });
-      if (r.ok) {
+      for (let page = 0; page < MAX_AUTO_PAGES; page++) {
+        const qs = new URLSearchParams({ search: term, limit: String(SEARCH_PAGE), offset: String(offset) });
+        if (appFilter) qs.set("appId", appFilter);
+        const r = await apiFetch(`/api/messages?${qs}`, { headers: { "x-master-pin": masterPin } });
+        if (!r.ok) break;
         const resp = await r.json() as { data: MsgRow[]; hasMore: boolean };
-        setMsgs(resp.data ?? []);
-        setSearchHasMore(resp.hasMore ?? false);
-        setSearchOffset(SEARCH_PAGE);
+        const batch = resp.data ?? [];
+        if (firstBatch) {
+          setMsgs(batch);          // replace old msgs only when first batch arrives
+          firstBatch = false;
+        } else {
+          setMsgs(prev => [...prev, ...batch]);
+        }
+        offset += SEARCH_PAGE;
+        setSearchOffset(offset);
+        if (!resp.hasMore) { setSearchHasMore(false); break; }
+        setSearchHasMore(true);   // still more after this page
       }
     } catch { } finally { setSearching(false); setSearchDone(true); }
   }, [appFilter, masterPin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── SEARCH: load next page of results ── */
+  /* ── SEARCH: manual load next page (shown after auto-pages exhausted) ── */
   const loadMoreSearch = useCallback(async (term: string, offset: number) => {
     setLoadingMoreSearch(true);
     try {
