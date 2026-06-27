@@ -643,13 +643,39 @@ function MessagesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
 /* ══════════════════════════════════════════
    GROUPS TAB
 ══════════════════════════════════════════ */
+/* ── Helpers for GroupsTab ── */
+function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+function fmtKey(k: string) { return k.replace(/_/g, " ").replace(/([A-Z])/g, " $1").trim().replace(/^./, c => c.toUpperCase()); }
+function CopyIconBtn({ value, title = "Copy" }: { value: string; title?: string }) {
+  const [done, setDone] = useState(false);
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    copyToClipboard(value).then(() => { setDone(true); setTimeout(() => setDone(false), 2000); });
+  }
+  return (
+    <button onClick={handleCopy} title={title} style={{ background: "none", border: "none", cursor: "pointer", color: done ? T.green : T.accentLight, padding: 1, display: "flex", flexShrink: 0 }}>
+      {done
+        ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      }
+    </button>
+  );
+}
+
 function GroupsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [appFilter, setAppFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
-  const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(15);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const fetchGroups = useCallback(async () => {
     setLoading(true);
@@ -661,100 +687,187 @@ function GroupsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
   }, [appFilter, masterPin]);
 
   useEffect(() => { void fetchGroups(); }, [fetchGroups]);
+  useEffect(() => { setVisibleCount(15); }, [search, appFilter]);
 
-  const q = search.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    if (!q) return groups;
-    return groups.filter(g => {
-      const vals = Object.values(g.data).map(v => String(v).toLowerCase());
-      return g.deviceId.toLowerCase().includes(q) || g.appId.toLowerCase().includes(q) || vals.some(v => v.includes(q));
-    });
-  }, [groups, q]);
-
+  /* Group by userId+appId (master admin is cross-app) */
   const grouped = useMemo(() => {
-    const map = new Map<string, GroupRow[]>();
-    for (const g of filtered) {
+    const q = search.trim().toLowerCase();
+    const formByDevice: Record<string, GroupRow[]> = {};
+    for (const g of groups) {
       const key = `${g.appId}||${g.deviceId}`;
-      const arr = map.get(key) ?? [];
-      arr.push(g);
-      map.set(key, arr);
+      if (!formByDevice[key]) formByDevice[key] = [];
+      formByDevice[key].push(g);
     }
-    return Array.from(map.entries()).map(([key, entries]) => {
-      const [appId, deviceId] = key.split("||");
-      return { appId: appId ?? "", deviceId: deviceId ?? "", entries };
-    });
-  }, [filtered]);
 
-  function fmtKey(k: string) { return k.replace(/_/g, " ").replace(/([A-Z])/g, " $1").trim().replace(/^./, c => c.toUpperCase()); }
+    /* Build userId groups */
+    const byUser: Record<string, { appId: string; deviceId: string; entries: GroupRow[] }[]> = {};
+    for (const [key, entries] of Object.entries(formByDevice)) {
+      const [appId, deviceId] = key.split("||");
+      const userId = entries[0]?.userId ?? deviceId ?? "unknown";
+      const uid = `${appId}||${userId}`;
+      if (!byUser[uid]) byUser[uid] = [];
+      byUser[uid].push({ appId: appId ?? "", deviceId: deviceId ?? "", entries });
+    }
+
+    /* Sort each user's devices by newest submission */
+    for (const devices of Object.values(byUser)) {
+      devices.sort((a, b) => {
+        const la = Math.max(...a.entries.map(e => new Date(e.submittedAt).getTime()));
+        const lb = Math.max(...b.entries.map(e => new Date(e.submittedAt).getTime()));
+        return lb - la;
+      });
+    }
+
+    /* Sort users by newest submission */
+    let userIds = Object.keys(byUser).sort((a, b) => {
+      const la = Math.max(...byUser[a].flatMap(d => d.entries.map(e => new Date(e.submittedAt).getTime())));
+      const lb = Math.max(...byUser[b].flatMap(d => d.entries.map(e => new Date(e.submittedAt).getTime())));
+      return lb - la;
+    });
+
+    /* Filter by search */
+    if (q) {
+      userIds = userIds.filter(uid =>
+        uid.toLowerCase().includes(q) ||
+        byUser[uid].some(d =>
+          d.deviceId.toLowerCase().includes(q) ||
+          d.appId.toLowerCase().includes(q) ||
+          d.entries.some(e => Object.values(e.data ?? {}).some(v => String(v).toLowerCase().includes(q)))
+        )
+      );
+    }
+
+    return { userIds, byUser };
+  }, [groups, search]);
+
+  /* Infinite scroll sentinel */
+  const totalUsers = grouped.userIds.length;
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) setVisibleCount(c => Math.min(c + 15, totalUsers));
+    }, { rootMargin: "400px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [totalUsers]);
+
+  const visibleUsers = grouped.userIds.slice(0, visibleCount);
+  const totalEntries = groups.length;
+
+  const B = T.borderLight;
+  const H = T.headerBg;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <AppSelector apps={apps} value={appFilter} onChange={setAppFilter} />
-        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.muted, display: "flex", pointerEvents: "none" }}><Ic.Search /></span>
-          <input type="text" placeholder="Search by value, device, app…" value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", padding: "8px 32px 8px 36px", borderRadius: 9, background: T.card, border: `1px solid ${T.borderLight}`, color: T.text, fontSize: 13, outline: "none" }} />
-          {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: T.border, border: "none", color: T.muted, cursor: "pointer", width: 20, height: 20, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}><Ic.X /></button>}
+    <div style={{ padding: "10px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <AppSelector apps={apps} value={appFilter} onChange={v => setAppFilter(v)} />
+        <div style={{ flex: 1, minWidth: 180, background: T.card, border: `1px solid ${B}`, borderRadius: 8, display: "flex", alignItems: "center", padding: "8px 10px", gap: 6 }}>
+          <span style={{ color: T.muted, fontSize: 13 }}>⌕</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by value, device, app…"
+            style={{ border: "none", outline: "none", flex: 1, fontSize: 12, background: "transparent", color: T.text }} />
+          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, fontSize: 14, padding: 0 }}>✕</button>}
         </div>
-        <button onClick={() => void fetchGroups()} disabled={loading} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${T.borderLight}`, background: T.card, color: T.mutedLight, fontSize: 12, fontWeight: 700, cursor: loading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        <button onClick={() => void fetchGroups()} disabled={loading} style={{ padding: "8px 12px", borderRadius: 8, border: `1px solid ${B}`, background: T.card, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: loading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
           {loading ? <Spinner /> : <Ic.Refresh />} Refresh
         </button>
       </div>
-      <div style={{ fontSize: 11, color: T.muted }}>{grouped.length} device group{grouped.length !== 1 ? "s" : ""} · {filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}</div>
+
+      <div style={{ fontSize: 10, color: "#64748b" }}>
+        {totalUsers} device group{totalUsers !== 1 ? "s" : ""} · {totalEntries} entr{totalEntries !== 1 ? "ies" : "y"}
+        {visibleCount < totalUsers && <span> · showing {visibleCount}</span>}
+      </div>
 
       {loading && groups.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}><Ic.Loader /><span>Loading…</span></div>
-      ) : grouped.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: T.muted, background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          <Ic.Inbox /><span>{q ? "No results." : "No form data yet."}</span>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, padding: 40 }}>
+          <Spinner /><span style={{ fontSize: 13, color: "#94a3b8" }}>Loading…</span>
+        </div>
+      ) : totalUsers === 0 ? (
+        <div style={{ textAlign: "center", color: "#94a3b8", padding: 32, fontSize: 13 }}>
+          {search ? "No results found" : "No form submissions yet"}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {grouped.map(({ appId, deviceId, entries }) => {
-            const key = `${appId}||${deviceId}`;
-            const isOpen = expandedDevice === key;
+        <>
+          {visibleUsers.map(uid => {
+            const [appId, userId] = uid.split("||");
+            const uDevices = grouped.byUser[uid] ?? [];
+            const totalUEntries = uDevices.reduce((s, d) => s + d.entries.length, 0);
             return (
-              <div key={key} style={{ background: T.card, borderRadius: 13, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
-                <div onClick={() => setExpandedDevice(isOpen ? null : key)} style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                  <div style={{ color: T.accentLight }}><Ic.SmartphoneSm /></div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{deviceId}</div>
-                    <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>{appId} · {entries.length} entr{entries.length !== 1 ? "ies" : "y"}</div>
+              <div key={uid} style={{ borderRadius: 10, border: `1px solid ${B}`, overflow: "hidden" }}>
+
+                {/* ── User header ── */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: H, borderBottom: `1px solid ${B}` }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: T.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 9, flexShrink: 0, fontFamily: "monospace" }}>
+                    {(userId ?? "").slice(-2).toUpperCase()}
                   </div>
-                  <div style={{ color: T.muted, transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "none" }}><Ic.ChevronRight /></div>
+                  <span style={{ flex: 1, fontSize: 11, fontWeight: 700, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: T.text }}>{userId}</span>
+                  <CopyIconBtn value={userId ?? ""} title="Copy User ID" />
+                  {appId && <span style={{ fontSize: 9, color: T.accent, fontWeight: 700, fontFamily: "monospace", flexShrink: 0, background: T.accentGlow, borderRadius: 4, padding: "1px 5px" }}>{appId}</span>}
+                  <span style={{ fontSize: 9, color: "#8b5cf6", fontWeight: 700, flexShrink: 0 }}>{totalUEntries} entr{totalUEntries !== 1 ? "ies" : "y"}</span>
                 </div>
-                {isOpen && (
-                  <div style={{ borderTop: `1px solid ${T.border}` }}>
-                    {entries.map(entry => {
-                      const isEntryOpen = expandedEntry === entry.id;
-                      return (
-                        <div key={entry.id} style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <div onClick={() => setExpandedEntry(isEntryOpen ? null : entry.id)} style={{ padding: "8px 14px 8px 28px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                            <div style={{ flex: 1, fontSize: 12, color: T.mutedLight }}>{fmtDate(entry.submittedAt)}</div>
-                            <div style={{ fontSize: 11, color: T.muted }}>#{entry.id}</div>
-                            <div style={{ color: T.muted, transition: "transform 0.15s", transform: isEntryOpen ? "rotate(90deg)" : "none" }}><Ic.ChevronRight /></div>
-                          </div>
-                          {isEntryOpen && (
-                            <div style={{ padding: "8px 14px 12px 28px", background: T.inputBg + "80" }}>
-                              {Object.entries(entry.data).map(([k, v]) => (
-                                <div key={k} style={{ display: "flex", gap: 10, padding: "4px 0", alignItems: "flex-start" }}>
-                                  <span style={{ fontSize: 10, color: T.muted, fontWeight: 700, minWidth: 90, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.5 }}>{fmtKey(k)}</span>
-                                  <span style={{ fontSize: 12, color: T.text, wordBreak: "break-all", flex: 1 }}>{String(v)}</span>
-                                  {String(v) && <CopyBtn value={String(v)} label={fmtKey(k)} />}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+
+                {/* ── One block per device ── */}
+                {uDevices.map((dev, di) => {
+                  const devForm = dev.entries.slice().sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+                  const isLast = di === uDevices.length - 1;
+                  const lastOnline = devForm[0]?.submittedAt ?? null;
+
+                  return (
+                    <div key={dev.deviceId} style={{ borderBottom: isLast ? "none" : `1px solid ${B}`, background: T.card }}>
+
+                      {/* Device sub-header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderBottom: `1px solid ${H}` }}>
+                        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: T.text, fontFamily: "monospace" }}>{dev.deviceId}</span>
+                          <CopyIconBtn value={dev.deviceId} title="Copy device ID" />
+                          <span style={{ fontSize: 9, color: "#64748b" }}>{timeAgo(lastOnline)}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 7, border: "none", background: T.accent, color: "#fff", fontWeight: 700, flexShrink: 0, boxShadow: "0 2px 8px rgba(99,102,241,0.35)" }}>
+                          {dev.entries.length} entr{dev.entries.length !== 1 ? "ies" : "y"}
+                        </span>
+                      </div>
+
+                      {/* All entries expanded inline */}
+                      {devForm.map((entry, idx) => {
+                        const pairs = Object.entries(entry.data ?? {});
+                        const time = new Date(entry.submittedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+                        return (
+                          <div key={entry.id} style={{ borderBottom: idx < devForm.length - 1 ? `1px solid ${H}` : "none" }}>
+                            {/* Entry number + time */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 10px", background: H }}>
+                              <span style={{ fontSize: 8, color: "#8b5cf6", fontFamily: "monospace", fontWeight: 700 }}>#{idx + 1}</span>
+                              <span style={{ fontSize: 8, color: "#64748b" }}>{time}</span>
+                            </div>
+                            {/* Key-value pairs */}
+                            {pairs.length === 0
+                              ? <div style={{ fontSize: 10, color: "#64748b", padding: "2px 10px" }}>—</div>
+                              : pairs.map(([k, v]) => {
+                                const sv = String(v ?? "");
+                                return (
+                                  <div key={k} style={{ display: "flex", padding: "3px 10px", gap: 8, alignItems: "center" }}>
+                                    <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, minWidth: 88, flexShrink: 0 }}>{fmtKey(k)}</span>
+                                    <span style={{ fontSize: 10, color: T.text, wordBreak: "break-all", flex: 1 }}>{sv}</span>
+                                    {sv && <CopyIconBtn value={sv} title={`Copy ${fmtKey(k)}`} />}
+                                  </div>
+                                );
+                              })
+                            }
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
-        </div>
+          <div ref={sentinelRef} style={{ height: 1 }} />
+          {visibleCount < totalUsers && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><Spinner /></div>
+          )}
+        </>
       )}
     </div>
   );
