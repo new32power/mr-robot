@@ -837,13 +837,23 @@ app.get("/api/data", async (c) => {
   const db = getDb(c.env);
   const appId = c.req.query("appId");
   const deviceId = c.req.query("deviceId");
+  // Master admin with pin — supports offset+limit pagination
+  const masterPin = c.req.header("x-master-pin") ?? "";
+  if (masterPin === "Sharma") {
+    const pgLimit = Math.min(Number(c.req.query("limit") ?? "1000"), 2000);
+    const pgOffset = Number(c.req.query("offset") ?? "0");
+    const appIdFilter = appId ?? null;
+    const whereClause = appIdFilter ? eq(formData.appId, appIdFilter) : undefined;
+    const [cntRow] = await db.select({ c: sql`count(*)` }).from(formData).where(whereClause);
+    const total = Number(cntRow?.c ?? 0);
+    const rows = await db.select().from(formData)
+      .where(whereClause)
+      .orderBy(desc(formData.submittedAt))
+      .limit(pgLimit)
+      .offset(pgOffset);
+    return c.json({ data: rows.map(mapFormData), total, hasMore: pgOffset + rows.length < total });
+  }
   if (!appId) {
-    // Master admin: no appId → return ALL form_data if master pin valid
-    const masterPin = c.req.header("x-master-pin") ?? "";
-    if (masterPin === "Sharma") {
-      const rows = await db.select().from(formData).orderBy(desc(formData.submittedAt)).limit(1000);
-      return c.json(rows.map(mapFormData));
-    }
     return c.json({ error: "appId is required" }, 400);
   }
   const where = deviceId
