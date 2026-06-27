@@ -1601,12 +1601,12 @@ function DevicesTab({ apps = [], masterPin, syncTick }: { apps?: App[]; masterPi
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
             {devices.map((d, idx) => {
               const sim1 = [d.sim1Carrier, d.sim1Phone].filter(Boolean).join(" — ") || "—";
               const sim2 = [d.sim2Carrier, d.sim2Phone].filter(Boolean).join(" — ") || "—";
               return (
-                <div key={d.deviceId} onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", flex: 1 }}>
+                <div key={d.deviceId} onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", minWidth: 0 }}>
                   <div style={{ padding: "8px 10px 8px 14px", borderBottom: `1px solid ${T.borderLight}`, background: T.headerBg, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                     <span style={{ fontWeight: 800, fontSize: 13, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {totalCount - idx}.&nbsp;{d.name}
