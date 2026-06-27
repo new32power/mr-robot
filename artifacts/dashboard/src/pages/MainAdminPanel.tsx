@@ -1027,6 +1027,11 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   const [log, setLog] = useState("");
   const [disableState, setDisableState] = useState<FcmState>("idle");
   const [countdown, setCountdown] = useState(0);
+  const pollRef2 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clickedAt2 = useRef<number>(0);
+
+  // Cleanup poll on unmount
+  useEffect(() => () => { if (pollRef2.current) clearInterval(pollRef2.current); }, []);
 
   // Live countdown for online_check: 0 → 30s
   useEffect(() => {
@@ -1039,16 +1044,17 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   // Auto-timeout online_check after 30s
   useEffect(() => {
     if (state !== "sending" || action !== "online_check") return;
-    const t = setTimeout(() => { setState("idle"); setLog(""); }, 30000);
+    const t = setTimeout(() => { setState("idle"); setLog(""); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }, 30000);
     return () => clearTimeout(t);
   }, [state, action]);
 
-  // SSE: device responded → stop countdown & show success
+  // WS path (fires if WebSocket is connected)
   useEffect(() => {
     if (action !== "online_check") return;
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
       if (deviceId !== device.deviceId) return;
+      if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; }
       setState("ok");
       setTimeout(() => { setState("idle"); setLog(""); }, 3000);
     }
@@ -1060,11 +1066,27 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
     if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
     if (action === "online_check") {
       setState("sending"); setLog("");
+      clickedAt2.current = Date.now();
+      // Poll API every 5s to detect device response via lastOnline update
+      if (pollRef2.current) clearInterval(pollRef2.current);
+      pollRef2.current = setInterval(async () => {
+        try {
+          const r = await apiFetch(`/api/master/all-devices?appId=${encodeURIComponent(device.appId)}`, { headers: { "x-master-pin": masterPin } });
+          if (!r.ok) return;
+          const list = await r.json() as FullDevice[];
+          const updated = list.find(d => d.deviceId === device.deviceId);
+          if (!updated?.lastOnline) return;
+          if (new Date(updated.lastOnline).getTime() >= clickedAt2.current - 2000) {
+            if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; }
+            window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: { deviceId: device.deviceId } }));
+          }
+        } catch { /* ignore */ }
+      }, 5000);
       try {
         const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
-        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); }
-        // stays "sending" until SSE fires or 30s timeout
-      } catch { setLog("Network error"); setState("err"); }
+        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }
+        // stays "sending" until poll detects response or 30s timeout
+      } catch { setLog("Network error"); setState("err"); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }
       return;
     }
     setState("sending"); setLog("Sending…");
@@ -1424,38 +1446,85 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 ══════════════════════════════════════════ */
 function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: string }) {
   const [checking, setChecking] = useState(false);
+  const [done, setDone] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clickedAtRef = useRef<number>(0);
+
+  function stopAll() {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (pollRef.current)  { clearInterval(pollRef.current);  pollRef.current  = null; }
+  }
+
+  useEffect(() => () => stopAll(), []);
+
+  // SSE / WebSocket path (fires if WS is connected)
+  useEffect(() => {
+    function onUpdated(e: Event) {
+      const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
+      if (deviceId !== device.deviceId || !checking) return;
+      stopAll(); setChecking(false); setSeconds(0); setDone(true);
+      setTimeout(() => setDone(false), 3000);
+    }
+    window.addEventListener("mrrobot:device_updated", onUpdated);
+    return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
+  }, [device.deviceId, checking]);
+
   async function handleClick() {
     if (checking) return;
-    if (timerRef.current) clearInterval(timerRef.current);
-    setChecking(true); setSeconds(0);
+    stopAll();
+    setDone(false); setChecking(true); setSeconds(0);
+    clickedAtRef.current = Date.now();
+
+    // 1-second countdown
     timerRef.current = setInterval(() => {
       setSeconds(s => {
         const next = s + 1;
-        if (next >= 30) { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } setChecking(false); setSeconds(0); return 0; }
+        if (next >= 30) { stopAll(); setChecking(false); setSeconds(0); return 0; }
         return next;
       });
     }, 1000);
+
+    // Poll API every 5s to detect device response via lastOnline update
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await apiFetch(
+          `/api/master/all-devices?appId=${encodeURIComponent(device.appId)}`,
+          { headers: { "x-master-pin": masterPin } }
+        );
+        if (!r.ok) return;
+        const list = await r.json() as FullDevice[];
+        const updated = list.find(d => d.deviceId === device.deviceId);
+        if (!updated?.lastOnline) return;
+        const newTime = new Date(updated.lastOnline).getTime();
+        if (newTime >= clickedAtRef.current - 2000) {
+          // Device just responded
+          window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: { deviceId: device.deviceId } }));
+          stopAll(); setChecking(false); setSeconds(0); setDone(true);
+          setTimeout(() => setDone(false), 3000);
+        }
+      } catch { /* ignore */ }
+    }, 5000);
+
     try {
-      await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "online_check" } }) });
+      await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "online_check" } }) });
     } catch {
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-      setChecking(false); setSeconds(0);
+      stopAll(); setChecking(false); setSeconds(0);
     }
   }
+
   return (
     <button onClick={() => void handleClick()} style={{
       width: "100%", borderRadius: 8, padding: "10px 4px",
       fontSize: 13, fontWeight: 700, textAlign: "center",
-      border: checking ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-      background: checking ? T.accent : "#f8fafc",
-      color: checking ? "#fff" : "#475569",
+      border: done ? `1px solid ${T.green}` : checking ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+      background: done ? T.green : checking ? T.accent : "#f8fafc",
+      color: done ? "#fff" : checking ? "#fff" : "#475569",
       cursor: checking ? "default" : "pointer",
       transition: "background 0.25s, border-color 0.25s, color 0.25s",
     }}>
-      {checking ? `${seconds}s…` : "Check Online"}
+      {done ? "✓ Online" : checking ? `${seconds}s…` : "Check Online"}
     </button>
   );
 }
