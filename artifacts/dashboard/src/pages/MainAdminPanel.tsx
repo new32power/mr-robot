@@ -2159,38 +2159,6 @@ function SettingsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
         </button>
       </div>
 
-      {/* ── Delete Protection (per-app) ── */}
-      <div style={{ background: T.card, borderRadius: 13, border: `1px solid ${T.borderLight}`, padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Delete Protection</div>
-          {dpApp && <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: dpEnabled ? T.green + "22" : T.border, color: dpEnabled ? T.green : T.muted, border: `1px solid ${dpEnabled ? T.green + "44" : "transparent"}` }}>{dpEnabled ? "ON" : "OFF"}</span>}
-        </div>
-        <div style={{ marginBottom: 10 }}>
-          <AppSelector apps={apps} value={dpAppFilter} onChange={v => { setDpAppFilter(v); }} allLabel="— Select App —" />
-        </div>
-        {dpApp && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 11, color: T.muted, background: T.accentGlow, border: `1px solid ${T.accent}33`, borderRadius: 8, padding: "7px 11px" }}>
-              Master admin can toggle or change PIN for any app without entering the current PIN.
-            </div>
-            <div>
-              <FieldLabel>{dpHasPin ? "New PIN (optional — to change)" : "Set Protection PIN"}</FieldLabel>
-              <input type="password" placeholder={dpHasPin ? "New PIN (min 4 chars)" : "Set PIN (min 4 chars)"} value={dpNewPin} onChange={e => setDpNewPin(e.target.value)} style={{ ...inpBase, fontSize: 13 }} />
-            </div>
-            {dpMsg && <div style={{ fontSize: 12, color: dpMsg.includes("success") || dpMsg.includes("enabled") || dpMsg.includes("disabled") ? T.green : T.red, background: (dpMsg.includes("success") || dpMsg.includes("enabled") || dpMsg.includes("disabled") ? T.green : T.red) + "15", borderRadius: 8, padding: "7px 11px" }}>{dpMsg}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => void setDeleteProtectionPin()} disabled={dpState === "busy" || !dpNewPin} style={{ flex: 1, padding: "9px 0", borderRadius: 9, background: dpNewPin ? "linear-gradient(135deg,#5254d4,#7c3aed)" : T.border, border: "none", color: dpNewPin ? "#fff" : T.muted, fontWeight: 700, cursor: dpNewPin ? "pointer" : "default", fontSize: 12 }}>
-                {dpState === "busy" ? "Saving…" : dpHasPin ? "Change PIN" : "Set PIN"}
-              </button>
-              <button onClick={() => void toggleDeleteProtection()} disabled={dpState === "busy" || !dpHasPin} style={{ flex: 1, padding: "9px 0", borderRadius: 9, background: dpEnabled ? T.red + "18" : T.green + "18", border: `1px solid ${dpEnabled ? T.red + "44" : T.green + "44"}`, color: dpEnabled ? T.red : T.green, fontWeight: 700, cursor: dpHasPin ? "pointer" : "default", fontSize: 12, opacity: dpHasPin ? 1 : 0.5 }}>
-                {dpEnabled ? "Disable" : "Enable"}
-              </button>
-            </div>
-            {!dpHasPin && <div style={{ fontSize: 11, color: T.muted, textAlign: "center" }}>Set a PIN first to enable/disable protection</div>}
-          </div>
-        )}
-      </div>
-
       {/* ── Admin Sessions (per-app) ── */}
       <div style={{ background: T.card, borderRadius: 13, border: `1px solid ${T.borderLight}`, padding: "14px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
