@@ -1483,7 +1483,7 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
    DEVICES TAB
 ══════════════════════════════════════════ */
 const PAGE_SIZE = 48;
-function DevicesTab({ masterPin, syncTick }: { apps?: App[]; masterPin: string; syncTick?: number; onOnlineCount?: (n: number) => void }) {
+function DevicesTab({ apps = [], masterPin, syncTick }: { apps?: App[]; masterPin: string; syncTick?: number; onOnlineCount?: (n: number) => void }) {
   const [devices, setDevices] = useState<FullDevice[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -1566,11 +1566,21 @@ function DevicesTab({ masterPin, syncTick }: { apps?: App[]; masterPin: string; 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
           <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.muted, display: "flex", pointerEvents: "none" }}><Ic.Search /></span>
-          <input type="text" placeholder="Search name, device ID, phone… (searches full DB)" value={search}
+          <input type="text" placeholder="Search name, device ID, phone…" value={search}
             onChange={e => setSearch(e.target.value)}
             style={{ width: "100%", boxSizing: "border-box", padding: "8px 32px 8px 36px", borderRadius: 9, background: T.card, border: `1px solid ${T.borderLight}`, color: T.text, fontSize: 13, outline: "none" }} />
           {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: T.border, border: "none", color: T.muted, cursor: "pointer", width: 20, height: 20, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}><Ic.X /></button>}
         </div>
+        {apps.length > 0 && (
+          <div style={{ position: "relative" }}>
+            <select value={appFilter} onChange={e => setAppFilter(e.target.value)}
+              style={{ appearance: "none", WebkitAppearance: "none", background: T.card, border: `1px solid ${T.borderLight}`, color: appFilter ? T.text : T.muted, borderRadius: 9, padding: "8px 32px 8px 12px", fontSize: 12, fontWeight: 600, outline: "none", cursor: "pointer" }}>
+              <option value="">All Apps</option>
+              {apps.map(a => <option key={a.appId} value={a.appId}>{a.name}</option>)}
+            </select>
+            <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: T.muted, fontSize: 10 }}>▼</span>
+          </div>
+        )}
         <button onClick={() => void fetchDevices(0, true)} disabled={loading} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${T.borderLight}`, background: T.card, color: T.mutedLight, fontSize: 12, fontWeight: 700, cursor: loading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           {loading ? <Spinner /> : <Ic.Refresh />} Refresh
         </button>
@@ -1591,7 +1601,7 @@ function DevicesTab({ masterPin, syncTick }: { apps?: App[]; masterPin: string; 
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
             {devices.map((d, idx) => {
               const sim1 = [d.sim1Carrier, d.sim1Phone].filter(Boolean).join(" — ") || "—";
               const sim2 = [d.sim2Carrier, d.sim2Phone].filter(Boolean).join(" — ") || "—";
