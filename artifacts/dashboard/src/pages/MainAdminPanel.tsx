@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 const _API_KEY = import.meta.env.VITE_API_SECRET ?? "";
+// VITE_API_URL = absolute backend URL for Cloudflare Pages (e.g. https://api.example.com)
+// Empty string in local dev → relative paths work via Replit reverse proxy
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined ?? "").replace(/\/$/, "");
 function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
   const h = new Headers(opts.headers);
   if (_API_KEY) h.set("x-api-key", _API_KEY);
-  return fetch(url, { ...opts, headers: h });
+  return fetch(`${API_BASE}${url}`, { ...opts, headers: h });
 }
 
 const T = {
@@ -1933,7 +1936,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     let closed = false;
     function connect() {
       if (closed) return;
-      es = new EventSource("/api/events");
+      es = new EventSource(`${API_BASE}/api/events`);
       es.addEventListener("device_updated", (e: MessageEvent) => {
         try {
           const d = JSON.parse(e.data as string) as FullDevice;
