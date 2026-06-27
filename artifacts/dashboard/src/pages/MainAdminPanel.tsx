@@ -1492,7 +1492,7 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(4,8,20,0.96)", zIndex: 300, display: "flex", flexDirection: "column", backdropFilter: "blur(4px)" }}>
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 32px", background: T.bg }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 32px", background: T.bg, overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
 
           {/* ── Name banner ── */}
@@ -1903,7 +1903,30 @@ function DevicesTab({ apps = [], masterPin, syncTick, onlineCount: onlineCountPr
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selected, setSelected] = useState<FullDevice | null>(null);
-  const handleSelect = useCallback((d: FullDevice) => setSelected(d), []);
+  const handleSelect = useCallback((d: FullDevice) => {
+    sessionStorage.setItem("mr_selected_dev", d.deviceId);
+    setSelected(d);
+  }, []);
+  function closeDetail() {
+    sessionStorage.removeItem("mr_selected_dev");
+    setSelected(null);
+  }
+
+  // Restore selected device from sessionStorage after devices load
+  useEffect(() => {
+    if (selected || devices.length === 0) return;
+    const saved = sessionStorage.getItem("mr_selected_dev");
+    if (!saved) return;
+    const found = devices.find(d => d.deviceId === saved);
+    if (found) { setSelected(found); return; }
+    apiFetch(`/api/master/all-devices?search=${encodeURIComponent(saved)}&limit=5`, { headers: { "x-master-pin": masterPin } })
+      .then(r => r.ok ? r.json() : null)
+      .then((j: { data?: FullDevice[] } | null) => {
+        const d = (j?.data ?? []).find(x => x.deviceId === saved);
+        if (d) setSelected(d);
+      })
+      .catch(() => {});
+  }, [devices]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Jump to device when navigated from Messages/Groups tab
   useEffect(() => {
@@ -2065,7 +2088,7 @@ function DevicesTab({ apps = [], masterPin, syncTick, onlineCount: onlineCountPr
         </>
       )}
 
-      {selected && <DeviceDetail device={selected} masterPin={masterPin} onClose={() => setSelected(null)} />}
+      {selected && <DeviceDetail device={selected} masterPin={masterPin} onClose={closeDetail} />}
     </div>
   );
 }
