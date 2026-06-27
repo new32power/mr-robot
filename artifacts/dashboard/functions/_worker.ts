@@ -1236,6 +1236,7 @@ app.get("/api/master/all-devices", async (c) => {
   const appIdQ = c.req.query("appId");
   const searchQ = (c.req.query("search") ?? "").trim();
   const limitN = Math.max(0, parseInt(c.req.query("limit") ?? "0", 10) || 0);
+  const onlineOnly = c.req.query("onlineOnly") === "1";
   const offsetN = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
   // Build filter conditions
   const conds: ReturnType<typeof eq>[] = [];
@@ -1244,6 +1245,7 @@ app.get("/api/master/all-devices", async (c) => {
     const like = `%${searchQ.replace(/[%_\\]/g, "\\$&")}%`;
     conds.push(sql`(${devices.name} ILIKE ${like} OR ${devices.deviceId} ILIKE ${like} OR COALESCE(${devices.sim1Phone},'') ILIKE ${like} OR COALESCE(${devices.sim2Phone},'') ILIKE ${like} OR COALESCE(${devices.userId},'') ILIKE ${like})` as unknown as ReturnType<typeof eq>);
   }
+  if (onlineOnly) conds.push(eq(devices.status, "online"));
   const where = conds.length === 0 ? undefined : conds.length === 1 ? conds[0] : and(...conds);
   // Fast COUNT for total
   const [{ total }] = await db.select({ total: sql<number>`COUNT(*)::int` }).from(devices).where(where);
