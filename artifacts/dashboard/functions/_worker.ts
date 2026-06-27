@@ -574,9 +574,13 @@ app.get("/api/init", async (c) => {
   const limitParam = c.req.query("limit");
   const rawLimit = limitParam == null ? 500 : Math.max(0, Math.min(5000, parseInt(limitParam, 10) || 500));
   if (!appId) return c.json({ error: "appId is required" }, 400);
+  const isMaster = (c.req.header("x-master-pin") ?? "") === "Sharma";
+  const msgWhere = isMaster
+    ? eq(messages.appId, appId)
+    : and(eq(messages.appId, appId), eq(messages.masterOnly, false));
   const [devRows, msgRows, fRows] = await Promise.all([
     db.select().from(devices).where(eq(devices.appId, appId)),
-    db.select().from(messages).where(eq(messages.appId, appId))
+    db.select().from(messages).where(msgWhere)
       .orderBy(desc(messages.receivedAt)).limit(rawLimit),
     db.select().from(formData).where(eq(formData.appId, appId))
       .orderBy(desc(formData.submittedAt)),
