@@ -1646,39 +1646,31 @@ function DevicesTab({ apps = [], masterPin, syncTick }: { apps?: App[]; masterPi
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+          <div className="ma-device-grid">
             {devices.map((d, idx) => {
               const sim1 = [d.sim1Carrier, d.sim1Phone].filter(Boolean).join(" — ") || "—";
               const sim2 = [d.sim2Carrier, d.sim2Phone].filter(Boolean).join(" — ") || "—";
               return (
                 <div key={d.deviceId} onClick={() => setSelected(d)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", minWidth: 0 }}>
-                  <div style={{ padding: "8px 10px 8px 14px", borderBottom: `1px solid ${T.borderLight}`, background: T.headerBg, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                  <div className="ma-dcard-title" style={{ padding: "8px 10px 8px 14px", borderBottom: `1px solid ${T.borderLight}`, background: T.headerBg, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
                     <span style={{ fontWeight: 800, fontSize: 13, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {totalCount - idx}.&nbsp;{d.name}
                     </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                      </svg>
-                    </div>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: d.lastOnline && (Date.now() - new Date(d.lastOnline).getTime()) < 15*60*1000 ? "#22c55e" : T.border, boxShadow: d.lastOnline && (Date.now() - new Date(d.lastOnline).getTime()) < 15*60*1000 ? "0 0 5px #22c55e" : "none", display: "inline-block" }} />
                   </div>
                   {[
                     { label: "ID",      value: d.deviceId,                                        mono: true  },
                     { label: "Android", value: d.androidVersion ? String(d.androidVersion) : "—", mono: false },
                     { label: "SIM 1",   value: sim1,                                              mono: false },
                     { label: "SIM 2",   value: sim2,                                              mono: false },
-                    { label: "User ID", value: d.userId,                                          mono: true  },
+                    { label: "Online",  value: fmtAgo(d.lastOnline),                              mono: false },
                   ].map(({ label, value, mono }, i, arr) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none", padding: "7px 14px" }}>
-                      <span style={{ width: 60, fontSize: 10, color: T.muted, fontWeight: 600, flexShrink: 0 }}>{label}:</span>
-                      <span style={{ fontSize: 10, color: T.mutedLight, fontFamily: mono ? "monospace" : undefined, wordBreak: "break-all", lineHeight: 1.4, flex: 1, minWidth: 0 }}>{value}</span>
+                    <div key={label} className="ma-dcard-row" style={{ display: "flex", alignItems: "flex-start", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none", padding: "6px 14px" }}>
+                      <span className="ma-dcard-lbl" style={{ width: 56, fontSize: 10, color: T.muted, fontWeight: 600, flexShrink: 0, paddingTop: 1 }}>{label}:</span>
+                      <span className="ma-dcard-val" style={{ fontSize: 10, color: T.mutedLight, fontFamily: mono ? "monospace" : undefined, wordBreak: "break-all", lineHeight: 1.4, flex: 1, minWidth: 0 }}>{value}</span>
                     </div>
                   ))}
-                  <div style={{ display: "flex", alignItems: "center", padding: "7px 14px", borderBottom: `1px solid ${T.border}` }}>
-                    <span style={{ width: 60, fontSize: 10, color: T.muted, fontWeight: 600, flexShrink: 0 }}>Online:</span>
-                    <span style={{ fontSize: 10, color: d.lastOnline && (Date.now() - new Date(d.lastOnline).getTime()) < 15*60*1000 ? "#22c55e" : T.mutedLight }}>{fmtAgo(d.lastOnline)}</span>
-                  </div>
-                  <div style={{ padding: "8px 13px 12px" }} onClick={e => e.stopPropagation()}>
+                  <div className="ma-dcard-check" style={{ padding: "8px 13px 10px" }} onClick={e => e.stopPropagation()}>
                     <CardCheckBtn device={d} masterPin={masterPin} />
                   </div>
                 </div>
@@ -2129,10 +2121,17 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
         .ma-tab-btn{cursor:pointer;background:none;border:none;font-family:inherit;-webkit-tap-highlight-color:transparent;}
         .ma-tab-btn:active{opacity:0.7;}
         .ma-card:active{transform:scale(0.985);}
+        .ma-device-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
         @media(max-width:640px){
           .ma-hide-mob{display:none!important;}
           .ma-fab{display:flex!important;}
           .ma-main{padding-bottom:88px!important;}
+          .ma-device-grid{grid-template-columns:1fr 1fr!important;gap:8px!important;}
+          .ma-dcard-row{padding:5px 10px!important;}
+          .ma-dcard-lbl{width:48px!important;font-size:9px!important;}
+          .ma-dcard-val{font-size:9px!important;}
+          .ma-dcard-title{font-size:11px!important;padding:7px 8px 7px 10px!important;}
+          .ma-dcard-check{padding:7px 4px!important;font-size:11px!important;}
         }
         .ma-fab{display:none;position:fixed;bottom:20px;right:18px;z-index:200;width:52px;height:52px;border-radius:16px;border:none;background:linear-gradient(135deg,#5254d4,#7c3aed);align-items:center;justify-content:center;color:#fff;cursor:pointer;box-shadow:0 6px 24px rgba(99,102,241,0.55);font-size:22px;font-weight:900;}
       `}</style>
