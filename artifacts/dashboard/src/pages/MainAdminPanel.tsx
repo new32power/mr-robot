@@ -1564,11 +1564,18 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
 /* ══════════════════════════════════════════
    DEVICE CARD — memoized so it only re-renders when device data changes
 ══════════════════════════════════════════ */
+const ONLINE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+function isRecentlyOnline(lastOnline: string | null | undefined): boolean {
+  if (!lastOnline) return false;
+  return Date.now() - new Date(lastOnline).getTime() < ONLINE_WINDOW_MS;
+}
+
 const DeviceCard = memo(function DeviceCard({
   device, idx, totalCount, masterPin, onSelect,
 }: { device: FullDevice; idx: number; totalCount: number; masterPin: string; onSelect: (d: FullDevice) => void }) {
   const sim1 = [device.sim1Carrier, device.sim1Phone].filter(Boolean).join(" — ") || "—";
   const sim2 = [device.sim2Carrier, device.sim2Phone].filter(Boolean).join(" — ") || "—";
+  const online = isRecentlyOnline(device.lastOnline);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
       <div onClick={() => onSelect(device)} className="ma-card" style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.borderLight}`, cursor: "pointer", overflow: "hidden", minWidth: 0 }}>
@@ -1576,7 +1583,7 @@ const DeviceCard = memo(function DeviceCard({
           <span style={{ fontWeight: 800, fontSize: 13, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {totalCount - idx}.&nbsp;{device.name}
           </span>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: device.status === "online" ? "#22c55e" : T.border, boxShadow: device.status === "online" ? "0 0 5px #22c55e" : "none", display: "inline-block" }} />
+          <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: online ? "#22c55e" : T.border, boxShadow: online ? "0 0 5px #22c55e" : "none", display: "inline-block" }} />
         </div>
         {([
           { label: "ID",      value: device.deviceId,                                              mono: true  },
