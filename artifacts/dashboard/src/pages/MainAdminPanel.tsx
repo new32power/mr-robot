@@ -1491,16 +1491,12 @@ function DeviceDetail({ device, masterPin, onClose }: { device: FullDevice; mast
             <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", borderBottom: `1px solid ${T.border}`, gap: 8 }}>
               <div style={{ width: 110, fontSize: 11, color: T.muted, fontWeight: 600, flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.3 }}>Name</div>
               <div style={{ flex: 1, fontSize: 12, color: T.mutedLight }}>{device.name}</div>
-              <button onClick={() => void handleInterceptToggle()} disabled={interceptLoading} title={intercepted ? "Master Active — messages hidden from sub-admin" : "Master Off — messages visible to sub-admin"} style={{
-                flexShrink: 0, borderRadius: 8, padding: "7px 12px", fontSize: 11, fontWeight: 800,
-                background: intercepted ? "#450a0a" : T.card,
-                border: `1.5px solid ${intercepted ? "#ef4444" : T.borderLight}`,
-                color: intercepted ? "#fca5a5" : T.muted,
-                cursor: interceptLoading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 6, letterSpacing: 0.2,
-              }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: intercepted ? "#ef4444" : T.border, boxShadow: intercepted ? "0 0 6px #ef4444" : "none" }} />
-                {intercepted ? "Master Active" : "Master Off"}
-              </button>
+              <div onClick={interceptLoading ? undefined : () => void handleInterceptToggle()} title={intercepted ? "Master Active — sub-admin ko messages nahi jayenge" : "Master Off — sub-admin ko messages jayenge"} style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: interceptLoading ? "wait" : "pointer", userSelect: "none" }}>
+                <div style={{ width: 44, height: 24, borderRadius: 12, background: intercepted ? "#ef4444" : "#1e293b", border: `1.5px solid ${intercepted ? "#ef4444" : "#334155"}`, position: "relative", transition: "background 0.25s, border-color 0.25s", boxShadow: intercepted ? "0 0 10px #ef444466" : "none" }}>
+                  <div style={{ position: "absolute", top: 2, left: intercepted ? 22 : 2, width: 18, height: 18, borderRadius: "50%", background: intercepted ? "#fff" : "#475569", transition: "left 0.25s, background 0.25s", boxShadow: "0 1px 4px rgba(0,0,0,0.4)" }} />
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: intercepted ? "#ef4444" : "#475569", transition: "color 0.25s" }}>{interceptLoading ? "…" : intercepted ? "MASTER ON" : "MASTER OFF"}</span>
+              </div>
               <button onClick={onClose} style={{ flexShrink: 0, background: T.accent, border: `1.5px solid #6366f1`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 800, color: "#fff", cursor: "pointer", boxShadow: "0 2px 10px rgba(99,102,241,0.5)", letterSpacing: 0.3 }}>← Back</button>
             </div>
 
