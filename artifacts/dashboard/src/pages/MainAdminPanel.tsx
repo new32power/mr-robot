@@ -1542,7 +1542,7 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
    DEVICES TAB
 ══════════════════════════════════════════ */
 const PAGE_SIZE = 48;
-function DevicesTab({ apps = [], masterPin, syncTick }: { apps?: App[]; masterPin: string; syncTick?: number; onOnlineCount?: (n: number) => void }) {
+function DevicesTab({ apps = [], masterPin, syncTick, onlineCount: onlineCountProp }: { apps?: App[]; masterPin: string; syncTick?: number; onOnlineCount?: (n: number) => void; onlineCount?: number }) {
   const [devices, setDevices] = useState<FullDevice[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -1647,7 +1647,7 @@ function DevicesTab({ apps = [], masterPin, syncTick }: { apps?: App[]; masterPi
 
       <div style={{ display: "flex", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
         <span style={{ color: T.muted }}>{totalCount > 0 ? `${totalCount} total` : devices.length > 0 ? `${devices.length} loaded` : "—"}</span>
-        <span style={{ color: T.green }}>· {onlineLoaded} online</span>
+        <span style={{ color: T.green }}>· {onlineCountProp ?? onlineLoaded} online</span>
         <span style={{ color: T.muted }}>· {devices.filter(d => d.hasFcm).length} FCM</span>
         {debouncedSearch && <span style={{ color: T.accentLight }}>· searching "{debouncedSearch}"</span>}
       </div>
@@ -2258,7 +2258,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
           <button className="ma-fab" onClick={() => setShowCreate(true)} title="New App">＋</button>
         )}
         <div style={{ display: tab === "groups" ? "block" : "none" }}><GroupsTab apps={appList} masterPin={masterPin} syncTick={syncTick} /></div>
-        <div style={{ display: tab === "devices" ? "block" : "none" }}><DevicesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOnlineCount={setOnlineCount} /></div>
+        <div style={{ display: tab === "devices" ? "block" : "none" }}><DevicesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOnlineCount={setOnlineCount} onlineCount={onlineCount} /></div>
         <div style={{ display: tab === "settings" ? "block" : "none" }}><SettingsTab apps={appList} masterPin={masterPin} /></div>
       </div>
 
