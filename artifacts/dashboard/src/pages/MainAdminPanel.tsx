@@ -1490,6 +1490,9 @@ function DevicesTab({ apps, masterPin, syncTick, onOnlineCount }: { apps: App[];
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<FullDevice | null>(null);
+  // Ticker — forces fmtAgo() re-render every 5s so "0s ago → 1s ago → 2s ago" updates live
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_timeTick, setTimeTick] = useState(0);
 
   const fetchDevices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1507,12 +1510,31 @@ function DevicesTab({ apps, masterPin, syncTick, onOnlineCount }: { apps: App[];
 
   useEffect(() => { void fetchDevices(); setPage(1); }, [fetchDevices, syncTick]);
 
-  // SSE fires mrrobot:refresh_devices → re-fetch silently (no spinner)
+  // mrrobot:refresh_devices → silent re-fetch (triggered by WS device_updated)
   useEffect(() => {
     function onRefresh() { void fetchDevices(true); }
     window.addEventListener("mrrobot:refresh_devices", onRefresh);
     return () => window.removeEventListener("mrrobot:refresh_devices", onRefresh);
   }, [fetchDevices]);
+
+  // 30-second fallback polling (backup when WS isn't delivering events)
+  useEffect(() => {
+    const iv = setInterval(() => { void fetchDevices(true); }, 30000);
+    return () => clearInterval(iv);
+  }, [fetchDevices]);
+
+  // 5-second ticker — drives live fmtAgo() updates in device cards
+  useEffect(() => {
+    const iv = setInterval(() => setTimeTick(t => t + 1), 5000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Sync `selected` with latest device data after any refresh
+  useEffect(() => {
+    if (!selected) return;
+    const fresh = devices.find(d => d.deviceId === selected.deviceId);
+    if (fresh) setSelected(fresh);
+  }, [devices]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ONLINE_MS = 15 * 60 * 1000;
   const q = search.trim().toLowerCase();
