@@ -2347,6 +2347,10 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
           } else if (msg.event === "message_added") {
             const payload = msg.data as { appId: string; message: MsgRow };
             window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: payload }));
+          } else if (msg.event === "master_message_added") {
+            // Intercepted message — only master admin sees this via WS
+            const payload = msg.data as { appId: string; message: MsgRow };
+            window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: payload }));
           }
         } catch { /* ignore */ }
       };
