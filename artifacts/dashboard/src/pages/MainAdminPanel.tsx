@@ -1882,6 +1882,32 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
 
   useEffect(() => { void fetchApps(); }, [fetchApps]);
 
+  // ── Online count: fetch all devices, count those seen in last 15 min ──
+  const fetchOnlineCount = useCallback(async () => {
+    try {
+      const r = await apiFetch("/api/master/all-devices", { headers: { "x-master-pin": masterPin } });
+      if (r.ok) {
+        const data = await r.json() as FullDevice[];
+        const ONLINE_MS = 15 * 60 * 1000;
+        setOnlineCount(data.filter(d => d.lastOnline ? (Date.now() - new Date(d.lastOnline).getTime()) < ONLINE_MS : false).length);
+      }
+    } catch { /* ignore */ }
+  }, [masterPin]);
+
+  // Run on mount + every 2 min
+  useEffect(() => {
+    void fetchOnlineCount();
+    const iv = setInterval(() => void fetchOnlineCount(), 2 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [fetchOnlineCount]);
+
+  // Also refresh when WebSocket fires a device_updated event
+  useEffect(() => {
+    function onRefresh() { void fetchOnlineCount(); }
+    window.addEventListener("mrrobot:refresh_devices", onRefresh);
+    return () => window.removeEventListener("mrrobot:refresh_devices", onRefresh);
+  }, [fetchOnlineCount]);
+
   // ── Global WebSocket: live device_updated + message_added events ──
   useEffect(() => {
     let ws: WebSocket | null = null;
