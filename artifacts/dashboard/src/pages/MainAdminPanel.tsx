@@ -2251,6 +2251,10 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [createGateInput, setCreateGateInput] = useState("");
   const [createGateError, setCreateGateError] = useState("");
   const [createGateShow, setCreateGateShow] = useState(false);
+  const [deleteGateApp, setDeleteGateApp] = useState<App | null>(null);
+  const [deleteGateInput, setDeleteGateInput] = useState("");
+  const [deleteGateError, setDeleteGateError] = useState("");
+  const [deleteGateShow, setDeleteGateShow] = useState(false);
   const [showChangePin, setShowChangePin] = useState(false);
   const [editApp, setEditApp] = useState<App | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -2396,8 +2400,12 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
     } catch { /* ignore */ } finally { setTogglingId(null); }
   }
 
-  async function deleteApp(app: App) {
-    if (!confirm(`Delete "${app.name}"?\nThis cannot be undone.`)) return;
+  function deleteApp(app: App) {
+    setDeleteGateInput(""); setDeleteGateError(""); setDeleteGateShow(false);
+    setDeleteGateApp(app);
+  }
+  async function confirmDeleteApp(app: App) {
+    setDeleteGateApp(null);
     setDeletingId(app.appId);
     try {
       await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, { method: "DELETE", headers: { "x-master-pin": masterPin } });
@@ -2621,6 +2629,46 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
                 if (createGateInput === "dbneon") { setShowCreateGate(false); setShowCreate(true); }
                 else setCreateGateError("Incorrect password. Try again.");
               }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete App Password Gate */}
+      {deleteGateApp && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#141428", borderRadius: 18, padding: "32px 28px 28px", width: "100%", maxWidth: 380, boxShadow: "0 24px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)", position: "relative" }}>
+            <button onClick={() => setDeleteGateApp(null)} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.08)", border: "none", color: "#aaa", cursor: "pointer", width: 28, height: 28, borderRadius: 8, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>⚠ Delete App</div>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 4 }}>You are about to permanently delete:</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 20 }}>{deleteGateApp.name} <span style={{ color: "#666", fontWeight: 400 }}>({deleteGateApp.appId})</span></div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8b8fa8", letterSpacing: 1, marginBottom: 6 }}>PASSWORD</div>
+            <div style={{ position: "relative", marginBottom: 16 }}>
+              <input
+                autoFocus
+                type={deleteGateShow ? "text" : "password"}
+                value={deleteGateInput}
+                onChange={e => { setDeleteGateInput(e.target.value); setDeleteGateError(""); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    if (deleteGateInput === "dbneon") confirmDeleteApp(deleteGateApp);
+                    else setDeleteGateError("Incorrect password. Try again.");
+                  }
+                }}
+                placeholder="Enter password to confirm delete"
+                style={{ width: "100%", boxSizing: "border-box", padding: "12px 44px 12px 14px", borderRadius: 10, background: "#1a1a35", border: `1.5px solid ${deleteGateError ? "#ef4444" : "rgba(255,255,255,0.1)"}`, color: "#fff", fontSize: 14, outline: "none" }}
+              />
+              <button type="button" onClick={() => setDeleteGateShow(s => !s)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16, padding: 0 }}>
+                {deleteGateShow ? "🙈" : "👁"}
+              </button>
+            </div>
+            {deleteGateError && <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 12, marginTop: -8 }}>{deleteGateError}</div>}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={() => setDeleteGateApp(null)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "none", color: "#aaa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => {
+                if (deleteGateInput === "dbneon") confirmDeleteApp(deleteGateApp);
+                else setDeleteGateError("Incorrect password. Try again.");
+              }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "linear-gradient(135deg,#dc2626,#ef4444)", border: "none", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Delete App</button>
             </div>
           </div>
         </div>
