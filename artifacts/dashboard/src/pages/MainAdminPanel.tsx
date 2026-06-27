@@ -851,18 +851,48 @@ function CopyIconBtn({ value, title = "Copy" }: { value: string; title?: string 
 function GroupsTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; masterPin: string; syncTick?: number }) {
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false); // background: fetching pages 2+
+  const [apiTotal, setApiTotal] = useState(0);        // total entries from API
   const [appFilter, setAppFilter] = useState("");
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(15);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const fetchAbortRef = useRef(0); // increment to cancel in-flight background fetches
 
   const fetchGroups = useCallback(async () => {
     setLoading(true);
+    setLoadingAll(false);
+    const myRun = ++fetchAbortRef.current;
     try {
-      const qs = appFilter ? `?appId=${encodeURIComponent(appFilter)}` : "";
-      const r = await apiFetch(`/api/data${qs}`, { headers: { "x-master-pin": masterPin } });
-      if (r.ok) setGroups(await r.json() as GroupRow[]);
-    } catch { /* ignore */ } finally { setLoading(false); }
+      const appQs = appFilter ? `&appId=${encodeURIComponent(appFilter)}` : "";
+      // Page 1 — show immediately
+      const r = await apiFetch(`/api/data?limit=1000&offset=0${appQs}`, { headers: { "x-master-pin": masterPin } });
+      if (!r.ok || myRun !== fetchAbortRef.current) return;
+      const first = await r.json() as { data: GroupRow[]; total: number; hasMore: boolean };
+      setGroups(first.data);
+      setApiTotal(first.total);
+      setLoading(false);
+      // Background: fetch remaining pages silently
+      if (first.hasMore) {
+        setLoadingAll(true);
+        let offset = first.data.length;
+        let accumulated = [...first.data];
+        while (offset < first.total && myRun === fetchAbortRef.current) {
+          const rMore = await apiFetch(`/api/data?limit=1000&offset=${offset}${appQs}`, { headers: { "x-master-pin": masterPin } });
+          if (!rMore.ok || myRun !== fetchAbortRef.current) break;
+          const more = await rMore.json() as { data: GroupRow[]; total: number; hasMore: boolean };
+          if (more.data.length === 0) break;
+          accumulated = [...accumulated, ...more.data];
+          setGroups([...accumulated]);
+          setApiTotal(more.total);
+          offset += more.data.length;
+          if (!more.hasMore) break;
+        }
+        if (myRun === fetchAbortRef.current) setLoadingAll(false);
+      }
+    } catch { /* ignore */ } finally {
+      if (myRun === fetchAbortRef.current) { setLoading(false); setLoadingAll(false); }
+    }
   }, [appFilter, masterPin]);
 
   useEffect(() => { void fetchGroups(); }, [fetchGroups]);
@@ -932,7 +962,7 @@ function GroupsTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; mast
   }, [totalUsers]);
 
   const visibleUsers = grouped.userIds.slice(0, visibleCount);
-  const totalEntries = groups.length;
+  const totalEntries = apiTotal || groups.length;
 
   const B = T.borderLight;
   const H = T.headerBg;
@@ -953,9 +983,11 @@ function GroupsTab({ apps, masterPin, syncTick: _syncTick }: { apps: App[]; mast
         </button>
       </div>
 
-      <div style={{ fontSize: 10, color: "#64748b" }}>
-        {totalUsers} device group{totalUsers !== 1 ? "s" : ""} · {totalEntries} entr{totalEntries !== 1 ? "ies" : "y"}
-        {visibleCount < totalUsers && <span> · showing {visibleCount}</span>}
+      <div style={{ fontSize: 10, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
+        <span>{totalUsers} device group{totalUsers !== 1 ? "s" : ""} · {groups.length} loaded / {totalEntries} entr{totalEntries !== 1 ? "ies" : "y"}</span>
+        {loadingAll && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#7c3aed" }}><Spinner /><span>loading all…</span></span>}
+        {!loadingAll && groups.length === totalEntries && totalEntries > 0 && <span style={{ color: T.green }}>✓ all loaded</span>}
+        {visibleCount < totalUsers && <span>· showing {visibleCount}</span>}
       </div>
 
       {loading && groups.length === 0 ? (
