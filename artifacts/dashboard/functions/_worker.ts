@@ -547,6 +547,11 @@ app.use("*", async (c, next) => {
   if (method === "GET" && path.includes("/delete-protection")) {
     return await next();
   }
+  // Master SSE — EventSource can't send headers, so PIN comes as query param
+  if (method === "GET" && path === "/api/master/events") {
+    if ((c.req.query("pin") ?? "") === "Sharma") return await next();
+    return c.json({ error: "Invalid master PIN" }, 401);
+  }
   if (method === "PATCH") {
     // Android device comms — allow without key
     if (path.startsWith("/api/devices/") || path.startsWith("/api/admin/sessions/")) {
@@ -1159,6 +1164,33 @@ app.post("/api/admin/verify-master-pin", async (c) => {
   if (!body.pin) return c.json({ error: "PIN required" }, 400);
   if (body.pin !== "Sharma") return c.json({ error: "Wrong Master PIN" }, 401);
   return c.json({ ok: true });
+});
+
+// ── Master SSE — EventSource can't send headers, PIN in query param ──
+// Cloudflare Workers support streaming; client reconnects every ~25s (CF CPU limit).
+app.get("/api/master/events", async (c) => {
+  const pin = c.req.query("pin") ?? "";
+  if (pin !== "Sharma") return c.json({ error: "Invalid master PIN" }, 401);
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  // Initial ping so client knows connection is alive
+  writer.write(enc.encode(":ping\n\n")).catch(() => {});
+  // Keep-alive pings every 20s (Cloudflare closes idle streams at 30s)
+  let done = false;
+  const tick = setInterval(() => {
+    if (done) { clearInterval(tick); return; }
+    writer.write(enc.encode(":ping\n\n")).catch(() => { done = true; clearInterval(tick); });
+  }, 20000);
+  // Close after 25s so CF doesn't hard-kill it; client auto-reconnects via onerror
+  setTimeout(() => { done = true; clearInterval(tick); writer.close().catch(() => {}); }, 25000);
+  return new Response(readable as ReadableStream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    },
+  });
 });
 
 // ── Master intercept: hide specific device messages from sub-admin ──
