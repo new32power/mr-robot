@@ -653,7 +653,6 @@ function MessagesTab({ apps, masterPin, syncTick: _syncTick, onOpenDevice }: { a
   const [msgs, setMsgs] = useState<MsgRow[]>([]);
   const [appFilter, setAppFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
   const [sensitiveOnly, setSensitiveOnly] = useState(false);
 
   /* Browse mode state */
@@ -2477,6 +2476,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [renewId, setRenewId] = useState<string | null>(null);
   const [renewConfirmApp, setRenewConfirmApp] = useState<App | null>(null);
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
   const [pingState, setPingState] = useState<"idle" | "loading" | "running" | "done" | "err">("idle");
   const [pingDone, setPingDone] = useState(0);
   const [pingTotal, setPingTotal] = useState(0);
