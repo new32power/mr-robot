@@ -1158,12 +1158,12 @@ async function getMasterPin(env: Env): Promise<string> {
   try {
     const sql = neon(env.NEON_DATABASE_URL);
     const rows = await sql(`SELECT value FROM settings WHERE key = 'master_pin' LIMIT 1`) as Array<{ value: string }>;
-    const pin = (rows[0]?.value ?? "").trim() || "1975";
+    const pin = (rows[0]?.value ?? "").trim();
     _masterPinCache = { value: pin, ts: now };
     return pin;
   } catch (err) {
     console.error("[getMasterPin] DB error:", err);
-    return _masterPinCache.value || "1975";
+    return ""; // DB unavailable — no fallback, reject all
   }
 }
 
