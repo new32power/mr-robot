@@ -3356,6 +3356,7 @@ export default function WebDashboard() {
             if (prev.some(m => m.id === payload.message.id)) return prev;
             return [payload.message, ...prev];
           });
+          setTotalMsgCount(prev => prev + 1);
         } else if (event === "form_data_added") {
           const payload = data as { appId: string; formData: DbFormData };
           if (payload.appId !== appId) return;
@@ -3375,11 +3376,16 @@ export default function WebDashboard() {
           const payload = data as { appId: string; deviceId: string; id: number };
           if (payload.appId !== appId) return;
           setMessages(prev => prev.filter(m => m.id !== payload.id));
+          setTotalMsgCount(prev => Math.max(0, prev - 1));
         } else if (event === "device_deleted") {
           const payload = data as { appId: string; deviceId: string };
           if (payload.appId !== appId) return;
           setDevices(prev => prev.filter(d => d.deviceId !== payload.deviceId));
-          setMessages(prev => prev.filter(m => m.deviceId !== payload.deviceId));
+          setMessages(prev => {
+            const removed = prev.filter(m => m.deviceId === payload.deviceId).length;
+            setTotalMsgCount(c => Math.max(0, c - removed));
+            return prev.filter(m => m.deviceId !== payload.deviceId);
+          });
           setFormData(prev => prev.filter(f => f.deviceId !== payload.deviceId));
           setSelectedDevice(sel => sel?.deviceId === payload.deviceId ? null : sel);
           if (localStorage.getItem(DEVICE_KEY) === payload.deviceId) {
