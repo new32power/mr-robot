@@ -583,17 +583,19 @@ app.get("/api/init", async (c) => {
   const msgWhere = isMaster
     ? eq(messages.appId, appId)
     : and(eq(messages.appId, appId), eq(messages.masterOnly, false));
-  const [devRows, msgRows, fRows] = await Promise.all([
+  const [devRows, msgRows, fRows, [totalRow]] = await Promise.all([
     db.select().from(devices).where(eq(devices.appId, appId)),
     db.select().from(messages).where(msgWhere)
       .orderBy(desc(messages.receivedAt)).limit(rawLimit),
     db.select().from(formData).where(eq(formData.appId, appId))
       .orderBy(desc(formData.submittedAt)),
+    db.select({ count: sql`COUNT(*)` }).from(messages).where(msgWhere),
   ]);
   return c.json({
     devices: devRows.map(mapDevice),
     messages: msgRows.map(mapMessage),
     formData: fRows.map(mapFormData),
+    totalMessages: Number(totalRow?.count ?? 0),
   });
 });
 
