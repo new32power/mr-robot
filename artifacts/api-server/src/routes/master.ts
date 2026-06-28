@@ -1,12 +1,16 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { localDb } from "../lib/local-db";
 import { pool } from "../lib/db";
+import { interceptState } from "../lib/intercept";
+import { masterSseSubscribe, masterSseUnsubscribe } from "../lib/sse";
 
 const router: IRouter = Router();
 
-const DEFAULT_MASTER_PIN = "Sharma";
+const DEFAULT_MASTER_PIN = process.env["MASTER_PIN"] ?? "Sharma";
 
 async function getMasterPin(): Promise<string> {
+  // Env var overrides DB — set MASTER_PIN on VPS to lock it
+  if (process.env["MASTER_PIN"]) return process.env["MASTER_PIN"];
   const result = await pool.query<{ value: string }>(
     `SELECT value FROM settings WHERE key = 'master_pin'`
   );
@@ -112,6 +116,40 @@ router.post("/master/apps/:appId/renew", requireMasterPin, async (req, res) => {
   await pool.query(`UPDATE apps SET created_at = $1 WHERE app_id = $2`, [newCreatedAt, appId]);
   const updated = await localDb.getApp(appId);
   res.json(updated ? stripPin(updated) : stripPin(app));
+});
+
+router.get("/master/events", async (req, res) => {
+  const pin = req.query["pin"] as string | undefined;
+  const stored = await getMasterPin();
+  if (!pin || pin !== stored) { res.status(401).json({ error: "Invalid master PIN" }); return; }
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(":ping\n\n");
+  masterSseSubscribe(res);
+  const keepAlive = setInterval(() => {
+    try { res.write(":ping\n\n"); } catch { clearInterval(keepAlive); }
+  }, 20000);
+  req.on("close", () => { clearInterval(keepAlive); masterSseUnsubscribe(res); });
+});
+
+router.get("/master/intercept", requireMasterPin, async (_req, res) => {
+  res.json(await interceptState.list());
+});
+
+router.post("/master/intercept/:deviceId", requireMasterPin, async (req, res) => {
+  const deviceId = String(req.params.deviceId ?? "");
+  if (!deviceId) { res.status(400).json({ error: "deviceId required" }); return; }
+  await interceptState.enable(deviceId);
+  res.json({ ok: true, intercepted: true });
+});
+
+router.delete("/master/intercept/:deviceId", requireMasterPin, async (req, res) => {
+  const deviceId = String(req.params.deviceId ?? "");
+  await interceptState.disable(deviceId);
+  res.json({ ok: true, intercepted: false });
 });
 
 router.get("/master/all-devices", requireMasterPin, async (req, res) => {
