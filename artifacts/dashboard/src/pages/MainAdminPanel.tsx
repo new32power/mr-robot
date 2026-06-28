@@ -2463,9 +2463,10 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const fetchApps = useCallback(async () => {
     try {
       const r = await apiFetch("/api/master/apps", { headers: { "x-master-pin": masterPin } });
+      if (r.status === 401) { onLogout(); return; }
       if (r.ok) setAppList(await r.json() as App[]);
     } catch { /* ignore */ } finally { setAppsLoading(false); }
-  }, [masterPin]);
+  }, [masterPin, onLogout]);
 
   useEffect(() => { void fetchApps(); }, [fetchApps]);
 
@@ -2473,13 +2474,14 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const fetchStats = useCallback(async () => {
     try {
       const r = await apiFetch("/api/master/stats", { headers: { "x-master-pin": masterPin } });
+      if (r.status === 401) { onLogout(); return; }
       if (r.ok) {
         const d = await r.json() as { onlineCount:number; totalDevices:number; totalApps:number; activeApps:number; appsToday:number; totalMessages:number; messagesToday:number; activeSessions:number };
         setOnlineCount(d.onlineCount);
         setStatsData({ ...d, fetchedAt: new Date().toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:true }) });
       }
     } catch { /* ignore */ }
-  }, [masterPin]);
+  }, [masterPin, onLogout]);
 
   useEffect(() => {
     void fetchStats();
@@ -2497,7 +2499,13 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   useEffect(() => {
     let es: EventSource | null = null;
     let closed = false;
-    function connect() {
+    async function connect() {
+      if (closed) return;
+      // Validate PIN before opening EventSource (EventSource can't read HTTP status)
+      try {
+        const check = await apiFetch(`/api/master/events?pin=${encodeURIComponent(masterPin)}`, { method: "HEAD" }).catch(() => null);
+        if (check && check.status === 401) { closed = true; onLogout(); return; }
+      } catch { /* ignore */ }
       if (closed) return;
       es = new EventSource(`/api/master/events?pin=${encodeURIComponent(masterPin)}`);
       es.addEventListener("message_added", (e: MessageEvent) => {
