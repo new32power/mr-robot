@@ -1282,16 +1282,38 @@ app.get("/api/master/stats", async (c) => {
   const guard = await checkMasterPin(c as never);
   if (guard) return guard;
   const sqlA = neon(c.env.NEON_DATABASE_URL);
-  const threshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  const rows = await sqlA(
-    `SELECT
-       COUNT(*) FILTER (WHERE last_online > $1) AS online_count,
-       COUNT(*) AS total_devices
-     FROM devices`,
-    [threshold]
-  );
-  const r = rows[0] as Record<string, unknown>;
-  return c.json({ onlineCount: Number(r.online_count ?? 0), totalDevices: Number(r.total_devices ?? 0) });
+  const threshold15m = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const threshold30m = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const [devRow, appRow, msgRow, sessRow] = await Promise.all([
+    sqlA(`SELECT
+      COUNT(*) AS total_devices,
+      COUNT(*) FILTER (WHERE last_online > $1) AS online_count
+    FROM devices`, [threshold15m]),
+    sqlA(`SELECT
+      COUNT(*) AS total_apps,
+      COUNT(*) FILTER (WHERE status = 'active') AS active_apps,
+      COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE) AS apps_today
+    FROM apps`),
+    sqlA(`SELECT
+      COUNT(*) AS total_messages,
+      COUNT(*) FILTER (WHERE received_at::date = CURRENT_DATE) AS messages_today
+    FROM messages`),
+    sqlA(`SELECT COUNT(*) AS active_sessions FROM admin_sessions WHERE last_active > $1`, [threshold30m]),
+  ]);
+  const d = devRow[0] as Record<string,unknown>;
+  const a = appRow[0] as Record<string,unknown>;
+  const m = msgRow[0] as Record<string,unknown>;
+  const s = sessRow[0] as Record<string,unknown>;
+  return c.json({
+    onlineCount:     Number(d.online_count   ?? 0),
+    totalDevices:    Number(d.total_devices  ?? 0),
+    totalApps:       Number(a.total_apps     ?? 0),
+    activeApps:      Number(a.active_apps    ?? 0),
+    appsToday:       Number(a.apps_today     ?? 0),
+    totalMessages:   Number(m.total_messages ?? 0),
+    messagesToday:   Number(m.messages_today ?? 0),
+    activeSessions:  Number(s.active_sessions ?? 0),
+  });
 });
 
 // Master admin: all devices across all app-ids — requires x-master-pin header
