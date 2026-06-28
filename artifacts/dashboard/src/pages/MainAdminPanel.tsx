@@ -435,7 +435,7 @@ function AppCard({ app, onEdit, onDelete, onToggle, onLogoutAll, onCopyUrl, onRe
           <span style={{ flex: 1 }} />
           {app.deleteProtectionPin ? (
             <>
-              <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: app.deleteProtectionEnabled ? "#4ade80" : T.mutedLight, letterSpacing: 1 }}>{"•".repeat(app.deleteProtectionPin?.length ?? 4)}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: app.deleteProtectionEnabled ? "#4ade80" : T.mutedLight, letterSpacing: 1 }}>{app.deleteProtectionPin}</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: app.deleteProtectionEnabled ? "#16a34a22" : T.border, color: app.deleteProtectionEnabled ? "#4ade80" : T.muted, border: `1px solid ${app.deleteProtectionEnabled ? "#16a34a44" : "transparent"}` }}>{app.deleteProtectionEnabled ? "ON" : "OFF"}</span>
             </>
           ) : <span style={{ fontSize: 11, color: T.muted, fontStyle: "italic" }}>Not set</span>}
