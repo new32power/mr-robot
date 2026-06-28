@@ -296,44 +296,22 @@ function ChangePinModal({ masterPin, onClose, onChanged }: { masterPin: string; 
   );
 }
 
-/* ── View Master PIN Modal ── */
+/* ── View Master PIN Modal — direct, no password ── */
 function ViewPinModal({ masterPin, onClose }: { masterPin: string; onClose: () => void }) {
-  const [pass, setPass] = useState(""); const [revealed, setRevealed] = useState(false);
-  const [err, setErr] = useState(""); const [showRevealed, setShowRevealed] = useState(false);
-  const HARDCODED = "vicky";
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (pass === HARDCODED) { setRevealed(true); setErr(""); }
-    else { setErr("Galat password. Dobara try karo."); setPass(""); }
-  }
+  const [showRevealed, setShowRevealed] = useState(false);
   return (
     <Modal onClose={onClose} maxWidth={360}>
       <ModalHeader title="View Master PIN" icon={<Ic.Eye />} onClose={onClose} />
-      {!revealed ? (
-        <form onSubmit={handleSubmit}>
-          <p style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Master PIN dekhne ke liye password enter karo.</p>
-          <FieldLabel>Password</FieldLabel>
-          <input type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="Password enter karo" autoFocus style={inpBase} />
-          {err && <ErrBanner msg={err} />}
-          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-            <button type="button" onClick={onClose} style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: T.border, border: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Cancel</button>
-            <button type="submit" disabled={!pass} style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: pass ? "linear-gradient(135deg,#5254d4,#7c3aed)" : T.borderLight, border: "none", color: pass ? "#fff" : T.muted, fontWeight: 700, cursor: pass ? "pointer" : "default", fontSize: 13 }}>Dekho</button>
-          </div>
-        </form>
-      ) : (
-        <div>
-          <p style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Yeh hai aapka current Master PIN:</p>
-          <div style={{ background: T.bg, border: `1px solid ${T.borderLight}`, borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 800, color: T.accentLight, letterSpacing: 4 }}>
-              {showRevealed ? masterPin : "•".repeat(masterPin.length)}
-            </span>
-            <button type="button" onClick={() => setShowRevealed(v => !v)} style={{ background: "none", border: "none", color: showRevealed ? T.accentLight : T.muted, cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}>
-              {showRevealed ? <Ic.EyeOff /> : <Ic.Eye />}
-            </button>
-          </div>
-          <button onClick={onClose} style={{ width: "100%", marginTop: 18, padding: "12px 0", borderRadius: 10, background: T.border, border: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Close</button>
-        </div>
-      )}
+      <p style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Current Master PIN:</p>
+      <div style={{ background: T.bg, border: `1px solid ${T.borderLight}`, borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 800, color: T.accentLight, letterSpacing: 4 }}>
+          {showRevealed ? masterPin : "•".repeat(masterPin.length)}
+        </span>
+        <button type="button" onClick={() => setShowRevealed(v => !v)} style={{ background: "none", border: "none", color: showRevealed ? T.accentLight : T.muted, cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}>
+          {showRevealed ? <Ic.EyeOff /> : <Ic.Eye />}
+        </button>
+      </div>
+      <button onClick={onClose} style={{ width: "100%", marginTop: 18, padding: "12px 0", borderRadius: 10, background: T.border, border: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Close</button>
     </Modal>
   );
 }
