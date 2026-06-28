@@ -3155,6 +3155,7 @@ export default function WebDashboard() {
 
   const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem("mrrobot_dark") === "1");
   const [deleteProtEnabled, setDeleteProtEnabled] = useState(false);
+  const [totalMsgCount, setTotalMsgCount] = useState(0);
 
   // Zero Trace = day mode only, no dark toggle
   const isZeroTrace = appName === "ZERO TRACE";
@@ -3265,7 +3266,7 @@ export default function WebDashboard() {
       const initRes = await apiFetch(`/api/init?appId=${appId}&limit=${FIRST_PAGE}`, { headers: h, signal: controller.signal });
       if (!initRes.ok) throw new Error("API error");
       const { devices: d, messages: firstM, formData: f, totalMessages: totalM } = await initRes.json() as { devices: DbDevice[]; messages: DbMessage[]; formData: DbFormData[]; totalMessages?: number };
-      if (totalM != null) totalMsgCountRef.current = totalM;
+      if (totalM != null) setTotalMsgCount(totalM);
       setDevices(d); setMessages(firstM); setFormData(f);
       setError(null);
       const savedDeviceId = localStorage.getItem(DEVICE_KEY);
@@ -3701,7 +3702,7 @@ export default function WebDashboard() {
               {page === "messages" && <MessagesPage messages={messages} devices={devices} onOpenDevice={onOpenDevice} scrollToMsgId={backPage === "messages" ? scrollToMsgId : null} onScrollDone={() => setScrollToMsgId(null)} initialCount={msgPageCountRef.current} onCountChange={n => { msgPageCountRef.current = n; }} />}
               {page === "groups" && <GroupsPage devices={devices} messages={messages} formData={formData} onOpenDevice={onOpenDevice} initialCount={groupsCountRef.current} onCountChange={n => { groupsCountRef.current = n; }} />}
               {page === "devices" && <DevicesPage appId={appId} devices={displayDevices} messages={messages} formData={formData} initialDevice={selectedDevice} onBack={onBack} initialCount={devicesCountRef.current} onCountChange={n => { devicesCountRef.current = n; }} />}
-              {page === "settings" && <SettingsPage appId={appId} isDark={effectiveDark} onToggleDark={toggleDark} devices={displayDevices} onLogout={handleLogout} msgCount={totalMsgCountRef.current || messages.length} isZeroTrace={isZeroTrace} onDeleteProtEnabledChange={setDeleteProtEnabled} />}
+              {page === "settings" && <SettingsPage appId={appId} isDark={effectiveDark} onToggleDark={toggleDark} devices={displayDevices} onLogout={handleLogout} msgCount={totalMsgCount || messages.length} isZeroTrace={isZeroTrace} onDeleteProtEnabledChange={setDeleteProtEnabled} />}
             </div>
             <ScrollToTopBtn />
           </>
