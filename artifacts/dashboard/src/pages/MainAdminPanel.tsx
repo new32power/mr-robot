@@ -2665,7 +2665,6 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{tabsUnlocked ? <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
             </button>
           )}
-          <button onClick={() => setShowViewPin(true)} title="View Master PIN" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: T.card, color: T.muted, flexShrink: 0 }}><Ic.Eye /></button>
           <button onClick={() => setShowChangePin(true)} title="Change PIN" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: T.card, color: T.muted, flexShrink: 0 }}><Ic.Key /></button>
           <button onClick={onLogout} title="Logout" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", flexShrink: 0 }}><Ic.LogOut /></button>
         </div>
