@@ -570,7 +570,8 @@ app.use("*", async (c, next) => {
     return await next();
   }
   // Master SSE — EventSource can't send headers, so PIN comes as query param
-  if (method === "GET" && path === "/api/master/events") {
+  // HEAD allowed: frontend validates PIN via HEAD before opening EventSource
+  if ((method === "GET" || method === "HEAD") && path === "/api/master/events") {
     if ((c.req.query("pin") ?? "") === await getMasterPin(c.env)) return await next();
     return c.json({ error: "Invalid master PIN" }, 401);
   }
