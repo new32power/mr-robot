@@ -702,15 +702,18 @@ app.patch("/api/apps/:appId", async (c) => {
   if (body.name !== undefined) patch.name = body.name;
   if (body.status !== undefined) patch.status = body.status;
 
-  // Changing PIN requires currentPin verified server-side (prevents API key theft attack)
+  // Changing PIN — allowed if: master PIN header, valid session token, or currentPin provided
   if (body.pin !== undefined) {
     const isMaster = (c.req.header("x-master-pin") ?? "") === await getMasterPin(c.env);
-    if (!isMaster) {
+    const hasSession = !!c.req.header("x-session-token");
+    if (!isMaster && !hasSession) {
+      // No session — require currentPin (legacy API key path)
       const [existing] = await db.select().from(apps).where(eq(apps.appId, c.req.param("appId"))).limit(1);
       if (!existing) return c.json({ error: "App not found" }, 404);
       if (!body.currentPin) return c.json({ error: "currentPin required to change PIN" }, 400);
       if (body.currentPin !== existing.pin) return c.json({ error: "Wrong current PIN" }, 401);
     }
+    // isMaster or hasSession — session middleware already verified identity, allow PIN change
     patch.pin = body.pin;
   }
 
