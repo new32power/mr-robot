@@ -2184,6 +2184,36 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
     } finally { setDpLoading(false); }
   }
 
+  /* ── Change PIN ── */
+  const [cpOld, setCpOld] = useState("");
+  const [cpNew, setCpNew] = useState("");
+  const [cpNew2, setCpNew2] = useState("");
+  const [cpErr, setCpErr] = useState("");
+  const [cpMsg, setCpMsg] = useState("");
+  const [cpLoading, setCpLoading] = useState(false);
+
+  async function handleChangePin(e: React.FormEvent) {
+    e.preventDefault();
+    setCpErr(""); setCpMsg(""); setCpLoading(true);
+    try {
+      if (cpNew.length < 4) { setCpErr("New PIN must be at least 4 characters."); return; }
+      if (cpNew !== cpNew2) { setCpErr("PINs do not match."); return; }
+      const r = await apiFetch(`/api/apps/${appId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: cpNew, currentPin: cpOld }),
+      });
+      const j = await r.json().catch(() => ({})) as { error?: string };
+      if (!r.ok) { setCpErr(j.error || "Failed. Check current PIN."); return; }
+      setCpMsg("PIN changed successfully!");
+      setCpOld(""); setCpNew(""); setCpNew2("");
+      // Clear session — force re-login with new PIN
+      localStorage.removeItem(SESS_KEY);
+      localStorage.removeItem(AUTH_KEY);
+      setTimeout(() => onLogout(), 1800);
+    } catch { setCpErr("Network error. Try again."); }
+    finally { setCpLoading(false); }
+  }
+
   /* ── Admin Sessions ── */
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [sessLoading, setSessLoading] = useState(true);
@@ -2683,6 +2713,37 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
         document.body
       )}
 
+      {/* ── Change PIN ── */}
+      <div style={{ background: t.card, borderRadius: 12, border: `1px solid ${t.cardB}`, overflow: "hidden" }}>
+        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${t.cardB}`, background: t.hdr }}>
+          <span style={{ fontWeight: 800, fontSize: 13, color: t.txt }}>Change Login PIN</span>
+        </div>
+        <form onSubmit={handleChangePin} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          <input
+            type="password" value={cpOld} onChange={e => { setCpOld(e.target.value); setCpErr(""); setCpMsg(""); }}
+            placeholder="Current PIN" autoComplete="current-password"
+            style={{ padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${cpErr ? "#ef4444" : t.cardB}`, background: t.hdr, color: t.txt, fontSize: 14, outline: "none" }}
+          />
+          <input
+            type="password" value={cpNew} onChange={e => { setCpNew(e.target.value); setCpErr(""); setCpMsg(""); }}
+            placeholder="New PIN (min 4 chars)" autoComplete="new-password"
+            style={{ padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${cpErr ? "#ef4444" : t.cardB}`, background: t.hdr, color: t.txt, fontSize: 14, outline: "none" }}
+          />
+          <input
+            type="password" value={cpNew2} onChange={e => { setCpNew2(e.target.value); setCpErr(""); setCpMsg(""); }}
+            placeholder="Confirm New PIN"  autoComplete="new-password"
+            style={{ padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${cpErr ? "#ef4444" : t.cardB}`, background: t.hdr, color: t.txt, fontSize: 14, outline: "none" }}
+          />
+          {cpErr && <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 600 }}>{cpErr}</div>}
+          {cpMsg && <div style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>{cpMsg} Logging out…</div>}
+          <button type="submit" disabled={cpLoading || !cpOld || !cpNew || !cpNew2} style={{
+            padding: "11px", borderRadius: 9, background: t.accent, border: "none", color: "#fff",
+            fontSize: 13, fontWeight: 700, cursor: cpLoading || !cpOld || !cpNew || !cpNew2 ? "not-allowed" : "pointer",
+            opacity: cpLoading || !cpOld || !cpNew || !cpNew2 ? 0.6 : 1,
+          }}>{cpLoading ? "Updating…" : "Update PIN"}</button>
+        </form>
+      </div>
+
       {/* ── Delete All Messages (Danger Zone) ── */}
       {!dpEnabled && <DeleteAllMessagesSection appId={appId} onDeleted={() => {}} msgCount={msgCount} />}
 
@@ -2870,10 +2931,6 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "change">("login");
-  const [oldPin, setOldPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [newPin2, setNewPin2] = useState("");
   const [msg, setMsg] = useState("");
   const [lockSecs, setLockSecs] = useState(0);
 
@@ -2939,53 +2996,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
     finally { setLoading(false); }
   }
 
-  async function handleChange(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true); setErr("");
-    try {
-      // Step 1: Verify current PIN
-      const verR = await apiFetch(`/api/apps/${appId}/verify-pin`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: oldPin }),
-      });
-      if (!verR.ok) {
-        const j = await verR.json().catch(() => ({}));
-        const apiErr = (j as { error?: string }).error ?? "";
-        if (verR.status === 429) {
-          const secMatch = apiErr.match(/(\d+)\s*sec/);
-          const minMatch = apiErr.match(/(\d+)\s*min/);
-          const secs = secMatch ? parseInt(secMatch[1]) : minMatch ? parseInt(minMatch[1]) * 60 : 120;
-          setLockSecs(secs);
-          setErr("");
-          return;
-        }
-        setErr("Current PIN is wrong.");
-        return;
-      }
-      if (newPin.length < 4) { setErr("New PIN must be at least 4 characters."); return; }
-      if (newPin !== newPin2) { setErr("PINs do not match."); return; }
 
-      // Step 2: Update PIN — check response
-      const patchR = await apiFetch(`/api/apps/${appId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: newPin, currentPin: oldPin }),
-      });
-      if (!patchR.ok) {
-        const j = await patchR.json().catch(() => ({}));
-        const apiErr = (j as { error?: string }).error ?? "";
-        setErr(apiErr || "Failed to update PIN. Try again.");
-        return;
-      }
-
-      // Success — clear session so fresh login required
-      localStorage.removeItem(`mrrobot_session_id_${appId}`);
-      localStorage.removeItem(`mrrobot_auth_${appId}`);
-      setMsg("PIN changed successfully! Please log in with new PIN.");
-      setMode("login");
-      setOldPin(""); setNewPin(""); setNewPin2(""); setErr("");
-    } catch { setErr("Network error. Try again."); }
-    finally { setLoading(false); }
-  }
 
   const isZT = appName === "ZERO TRACE";
   const inputStyle: React.CSSProperties = {
@@ -3054,13 +3065,12 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
 
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ color: appName === "ZERO TRACE" ? "#1e3a8a" : "#f8fafc", fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
-              {mode === "login" ? "Welcome Back, Admin" : "Change PIN"}
+              {"Welcome Back, Admin"}
             </div>
             {appName && <div style={{ color: appName === "ZERO TRACE" ? "#1d4ed8" : "#475569", fontSize: 11, marginTop: 4, fontFamily: "monospace", fontWeight: 700 }}>{appName}</div>}
           </div>
 
-          {mode === "login" ? (
-            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <label style={labelStyle}>Token ID</label>
                 <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
@@ -3096,39 +3106,8 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
                   borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700,
                   cursor: lockSecs > 0 ? "not-allowed" : "pointer",
                 }}>{lockSecs > 0 ? `Locked (${String(Math.floor(lockSecs/60)).padStart(2,"0")}:${String(lockSecs%60).padStart(2,"0")})` : "Sign In"}</button>
-                <button type="button" onClick={() => { setMode("change"); setErr(""); setMsg(""); }} style={{
-                  flex: 1, background: "transparent", color: isZT ? "#1d4ed8" : "#94a3b8", border: isZT ? "1.5px solid #bfdbfe" : "1.5px solid #334155",
-                  borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                }}>Change PIN</button>
               </div>
             </form>
-          ) : (
-            <form onSubmit={handleChange} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={labelStyle}>Current PIN</label>
-                <input type="password" value={oldPin} onChange={e => { setOldPin(e.target.value); setErr(""); }} placeholder="Current PIN" style={inputStyle} autoFocus />
-              </div>
-              <div>
-                <label style={labelStyle}>New PIN</label>
-                <input type="password" value={newPin} onChange={e => { setNewPin(e.target.value); setErr(""); }} placeholder="New PIN (min 4 chars)" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Confirm New PIN</label>
-                <input type="password" value={newPin2} onChange={e => { setNewPin2(e.target.value); setErr(""); }} placeholder="Confirm PIN" style={inputStyle} />
-              </div>
-              {err && <div style={{ color: "#f87171", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{err}</div>}
-              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                <button type="submit" style={{
-                  flex: 1, background: isZT ? "#1d4ed8" : t.accent, color: "#fff", border: "none",
-                  borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer",
-                }}>Update PIN</button>
-                <button type="button" onClick={() => { setMode("login"); setErr(""); }} style={{
-                  flex: 1, background: "transparent", color: "#94a3b8", border: "1.5px solid #334155",
-                  borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                }}>Cancel</button>
-              </div>
-            </form>
-          )}
 
           <div style={{ textAlign: "center", marginTop: 24, color: "#334155", fontSize: 11, fontWeight: 600 }}>
             Build: {BUILD_VERSION}
