@@ -3119,6 +3119,20 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               )}
               {lockSecs === 0 && err && <div style={{ color: "#f87171", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{err}</div>}
               {msg && <div style={{ color: "#4ade80", fontSize: 12, textAlign: "center", fontWeight: 600 }}>{msg}</div>}
+
+              {/* Progress bar — visible during login */}
+              {loading && (
+                <>
+                  <style>{`@keyframes mrSlide{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}`}</style>
+                  <div style={{ width:"100%", height:3, background: isZT?"#dbeafe":"#1e293b", borderRadius:99, overflow:"hidden" }}>
+                    <div style={{ height:"100%", width:"30%", borderRadius:99, background: isZT?"#1d4ed8":t.accent, animation:"mrSlide 1.1s ease-in-out infinite" }} />
+                  </div>
+                  <div style={{ textAlign:"center", fontSize:11, color: isZT?"#1d4ed8":"#64748b", fontWeight:600, letterSpacing:0.5 }}>
+                    Verifying…
+                  </div>
+                </>
+              )}
+
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" disabled={loading || lockSecs > 0} style={{
                   flex: 1, background: lockSecs > 0 ? "#374151" : isZT ? "#1d4ed8" : t.accent,
