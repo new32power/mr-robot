@@ -2645,6 +2645,22 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       return app.fetch(request, env, ctx);
     }
+    // Patch the JS bundle on-the-fly: remove PIN from SSE URL, use HMAC token instead
+    if (url.pathname.endsWith(".js") && url.pathname.includes("index-")) {
+      const assetResp = await env.ASSETS.fetch(request);
+      const js = await assetResp.text();
+      // OLD: HEAD check with ?pin= then EventSource with ?pin=
+      const OLD_SSE = `try{const St=await He(\`/api/master/events?pin=\${encodeURIComponent(r)}\`,{method:"HEAD"}).catch(()=>null);if(St&&St.status===401){ge=!0,d();return}}catch{}ge||(W=new EventSource(\`/api/master/events?pin=\${encodeURIComponent(r)}\`)`;
+      // NEW: fetch HMAC token first, then EventSource with ?token=
+      const NEW_SSE = `try{const _tr=await He("/api/master/sse-token",{method:"POST",headers:{"Content-Type":"application/json","x-master-pin":r},body:JSON.stringify({pin:r})});if(!_tr.ok){if(!ge)setTimeout(ze,5e3);return}const{token:_tk}=await _tr.json();if(ge)return;!ge&&(W=new EventSource(\`/api/master/events?token=\${encodeURIComponent(_tk)}\`)`;
+      const patched = js.includes(OLD_SSE) ? js.replace(OLD_SSE, NEW_SSE) : js;
+      return new Response(patched, {
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
     // fall through to Pages static assets (React SPA)
     return env.ASSETS.fetch(request);
   },
