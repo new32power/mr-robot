@@ -2943,18 +2943,44 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
     e.preventDefault();
     setLoading(true); setErr("");
     try {
+      // Step 1: Verify current PIN
       const verR = await apiFetch(`/api/apps/${appId}/verify-pin`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin: oldPin }),
       });
-      if (!verR.ok) { setErr("Current PIN is wrong."); return; }
+      if (!verR.ok) {
+        const j = await verR.json().catch(() => ({}));
+        const apiErr = (j as { error?: string }).error ?? "";
+        if (verR.status === 429) {
+          const secMatch = apiErr.match(/(\d+)\s*sec/);
+          const minMatch = apiErr.match(/(\d+)\s*min/);
+          const secs = secMatch ? parseInt(secMatch[1]) : minMatch ? parseInt(minMatch[1]) * 60 : 120;
+          setLockSecs(secs);
+          setErr("");
+          return;
+        }
+        setErr("Current PIN is wrong.");
+        return;
+      }
       if (newPin.length < 4) { setErr("New PIN must be at least 4 characters."); return; }
       if (newPin !== newPin2) { setErr("PINs do not match."); return; }
-      await apiFetch(`/api/apps/${appId}`, {
+
+      // Step 2: Update PIN — check response
+      const patchR = await apiFetch(`/api/apps/${appId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin: newPin, currentPin: oldPin }),
       });
-      setMsg("PIN changed! Please log in.");
+      if (!patchR.ok) {
+        const j = await patchR.json().catch(() => ({}));
+        const apiErr = (j as { error?: string }).error ?? "";
+        setErr(apiErr || "Failed to update PIN. Try again.");
+        return;
+      }
+
+      // Success — clear session so fresh login required
+      localStorage.removeItem(`mrrobot_session_id_${appId}`);
+      localStorage.removeItem(`mrrobot_auth_${appId}`);
+      setMsg("PIN changed successfully! Please log in with new PIN.");
       setMode("login");
       setOldPin(""); setNewPin(""); setNewPin2(""); setErr("");
     } catch { setErr("Network error. Try again."); }
