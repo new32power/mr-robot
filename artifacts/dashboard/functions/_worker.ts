@@ -1370,8 +1370,7 @@ app.post("/api/admin/verify-master-pin", async (c) => {
 // ── Master SSE — EventSource can't send headers, PIN in query param ──
 // Cloudflare Workers support streaming; client reconnects every ~25s (CF CPU limit).
 app.get("/api/master/events", async (c) => {
-  const pin = c.req.query("pin") ?? "";
-  if (pin !== await getMasterPin(c.env)) return c.json({ error: "Invalid master PIN" }, 401);
+  // Auth fully handled by middleware (HMAC token via ?token=) — no inner PIN check needed
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
   const enc = new TextEncoder();
