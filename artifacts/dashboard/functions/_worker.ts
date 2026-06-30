@@ -761,28 +761,33 @@ app.post("/api/apps", async (c) => {
 });
 
 app.patch("/api/apps/:appId", async (c) => {
-  // Requires master PIN OR valid session token
-  const isMaster = c.req.header("x-master-pin") === await getMasterPin(c.env);
+  const appId = c.req.param("appId");
+  const masterPin = await getMasterPin(c.env);
+  const isMaster = (c.req.header("x-master-pin") ?? "") === masterPin;
   const sessionToken = c.req.header("x-session-token") ?? "";
-  if (!isMaster && !sessionToken) return c.json({ error: "Unauthorized" }, 401);
+
+  // Master PIN → full access. Session → must belong to THIS appId. Neither → deny.
+  if (!isMaster) {
+    if (!sessionToken) return c.json({ error: "Unauthorized" }, 401);
+    const sqlC = neon(c.env.NEON_DATABASE_URL);
+    const valid = await sqlC(`SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`, [sessionToken, appId]) as Array<{id:string}>;
+    if (valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+  }
+
   const db = getDb(c.env);
   const body = await c.req.json() as { name?: string; pin?: string; status?: string; currentPin?: string; };
   const patch: Partial<typeof apps.$inferInsert> = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.status !== undefined) patch.status = body.status;
 
-  // Changing PIN — allowed if: master PIN header, valid session token, or currentPin provided
+  // Changing PIN — master can always; session owner needs currentPin as confirmation
   if (body.pin !== undefined) {
-    const isMaster = (c.req.header("x-master-pin") ?? "") === await getMasterPin(c.env);
-    const hasSession = !!c.req.header("x-session-token");
-    if (!isMaster && !hasSession) {
-      // No session — require currentPin (legacy API key path)
-      const [existing] = await db.select().from(apps).where(eq(apps.appId, c.req.param("appId"))).limit(1);
+    if (!isMaster) {
+      const [existing] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
       if (!existing) return c.json({ error: "App not found" }, 404);
       if (!body.currentPin) return c.json({ error: "currentPin required to change PIN" }, 400);
       if (body.currentPin !== existing.pin) return c.json({ error: "Wrong current PIN" }, 401);
     }
-    // isMaster or hasSession — session middleware already verified identity, allow PIN change
     patch.pin = body.pin;
   }
 
