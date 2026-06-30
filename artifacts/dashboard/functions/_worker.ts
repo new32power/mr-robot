@@ -513,7 +513,7 @@ function isExpired(createdAt: string | Date | null | undefined): boolean {
 // =================== APP ===================
 
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { sessionAppId: string } }>();
 app.use("*", cors({
   origin: "*",
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
@@ -563,12 +563,17 @@ app.use("*", async (c, next) => {
   const sessionToken = c.req.header("x-session-token") ?? "";
   if (sessionToken) {
     const cached = _sessionCache.get(sessionToken);
-    if (cached && Date.now() < cached.expiry) return await next();
+    if (cached && Date.now() < cached.expiry) {
+      c.set('sessionAppId', cached.appId);
+      return await next();
+    }
     try {
       const sqlC = neon(c.env.NEON_DATABASE_URL);
-      const rows = await sqlC(`SELECT id FROM admin_sessions WHERE id = $1 LIMIT 1`, [sessionToken]) as Array<{ id: string }>;
+      const rows = await sqlC(`SELECT id, app_id FROM admin_sessions WHERE id = $1 LIMIT 1`, [sessionToken]) as Array<{ id: string; app_id: string }>;
       if (rows.length > 0) {
-        _sessionCache.set(sessionToken, { expiry: Date.now() + 60_000 });
+        const appId = rows[0].app_id ?? '';
+        _sessionCache.set(sessionToken, { expiry: Date.now() + 60_000, appId });
+        c.set('sessionAppId', appId);
         return await next();
       }
     } catch { /* deny */ }
@@ -649,14 +654,7 @@ app.get("/api/init", async (c) => {
   const isMaster = (c.req.header("x-master-pin") ?? "") === await getMasterPin(c.env);
   // Require valid session or master PIN
   if (!isMaster) {
-    const sessionToken = c.req.header("x-session-token") ?? "";
-    if (!sessionToken) return c.json({ error: "Unauthorized" }, 401);
-    const sqlClient = neon(c.env.NEON_DATABASE_URL);
-    const valid = await sqlClient(
-      `SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`,
-      [sessionToken, appId]
-    ) as Array<{id:string}>;
-    if (valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
   const msgWhere = isMaster
     ? eq(messages.appId, appId)
@@ -769,9 +767,7 @@ app.patch("/api/apps/:appId", async (c) => {
   // Master PIN → full access. Session → must belong to THIS appId. Neither → deny.
   if (!isMaster) {
     if (!sessionToken) return c.json({ error: "Unauthorized" }, 401);
-    const sqlC = neon(c.env.NEON_DATABASE_URL);
-    const valid = await sqlC(`SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`, [sessionToken, appId]) as Array<{id:string}>;
-    if (valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
 
   const db = getDb(c.env);
@@ -878,11 +874,7 @@ app.get("/api/devices", async (c) => {
   const _im1=(c.req.header("x-master-pin")??"")===await getMasterPin(c.env);
   if(!_im1){
     if(!appId)return c.json({error:"appId required"},400);
-    const _st1=c.req.header("x-session-token")??"";
-    if(!_st1)return c.json({error:"Unauthorized"},401);
-    const _sc1=neon(c.env.NEON_DATABASE_URL);
-    const _sv1=await _sc1(`SELECT id FROM admin_sessions WHERE id=$1 AND app_id=$2`,[_st1,appId]) as Array<{id:string}>;
-    if(!_sv1.length)return c.json({error:"Unauthorized"},401);
+    if(c.get('sessionAppId') !== appId)return c.json({error:"Unauthorized"},401);
   }
   const where = appId ? eq(devices.appId, appId) : userId ? eq(devices.userId, userId) : undefined;
   const rows = where
@@ -909,10 +901,8 @@ app.patch("/api/devices/:deviceId", async (c) => {
     const sessionToken = c.req.header("x-session-token") ?? "";
     if (!isMasterPatch && !sessionToken) return c.json({ error: "Unauthorized" }, 401);
     if (!isMasterPatch && sessionToken) {
-      // Verify session exists (any valid app session can manage its own devices)
-      const sqlC = neon(c.env.NEON_DATABASE_URL);
-      const valid = await sqlC(`SELECT id FROM admin_sessions WHERE id = $1 LIMIT 1`, [sessionToken]) as Array<{id:string}>;
-      if (valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+      // Session already validated by middleware — sessionAppId confirms it's a real session
+      if (!c.get('sessionAppId')) return c.json({ error: "Unauthorized" }, 401);
     }
   }
   if (body.status !== undefined) patch.status = String(body.status);
@@ -936,10 +926,7 @@ app.get("/api/messages/count", async (c) => {
   const _isMasterCaller = (c.req.header("x-master-pin") ?? "") === await getMasterPin(c.env);
   if (!_isMasterCaller) {
     if (!appId) return c.json({ error: "appId required" }, 400);
-    const _sessToken = c.req.header("x-session-token") ?? "";
-    const _sqlC = neon(c.env.NEON_DATABASE_URL);
-    const _valid = await _sqlC(`SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`, [_sessToken, appId]) as Array<{id:string}>;
-    if (_valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
   const where = appId ? eq(messages.appId, appId) : undefined;
   const rows = where
@@ -959,10 +946,7 @@ app.get("/api/messages", async (c) => {
   // Non-master: session must belong to requested appId (prevents cross-app IDOR)
   if (!isMaster) {
     if (!appId) return c.json({ error: "appId required" }, 400);
-    const _sessToken = c.req.header("x-session-token") ?? "";
-    const _sqlC = neon(c.env.NEON_DATABASE_URL);
-    const _valid = await _sqlC(`SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`, [_sessToken, appId]) as Array<{id:string}>;
-    if (_valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
 
   const PAGE = 30;           // browse page size
@@ -1141,9 +1125,7 @@ app.delete("/api/messages/:id", async (c) => {
   if (!isMasterDel) {
     const st = c.req.header("x-session-token") ?? "";
     if (!st) return c.json({ error: "Unauthorized" }, 401);
-    const sc = neon(c.env.NEON_DATABASE_URL);
-    const sv = await sc(`SELECT id FROM admin_sessions WHERE id=$1 AND app_id=$2`, [st, msg.appId]) as Array<{id:string}>;
-    if (!sv.length) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== msg.appId) return c.json({ error: "Unauthorized" }, 401);
   }
   await db.delete(messages).where(eq(messages.id, id));
   await broadcast(c.env, "message_deleted", { appId: msg.appId, deviceId: msg.deviceId, id });
@@ -1161,9 +1143,7 @@ app.delete("/api/devices/:deviceId", async (c) => {
   if (!isMasterDev) {
     const st = c.req.header("x-session-token") ?? "";
     if (!st) return c.json({ error: "Unauthorized" }, 401);
-    const sc = neon(c.env.NEON_DATABASE_URL);
-    const sv = await sc(`SELECT id FROM admin_sessions WHERE id=$1 AND app_id=$2`, [st, dev.appId]) as Array<{id:string}>;
-    if (!sv.length) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== dev.appId) return c.json({ error: "Unauthorized" }, 401);
   }
   await db.delete(messages).where(eq(messages.deviceId, deviceId));
   await db.delete(formData).where(eq(formData.deviceId, deviceId));
@@ -1340,7 +1320,7 @@ app.post("/api/fcm/online-check", async (c) => {
 
 // ── Master PIN: DB-driven with 30s in-memory cache ──
 let _masterPinCache: { value: string; ts: number } = { value: "", ts: 0 };
-const _sessionCache = new Map<string, { expiry: number }>();
+const _sessionCache = new Map<string, { expiry: number; appId: string }>();
 async function getMasterPin(env: Env): Promise<string> {
   const now = Date.now();
   if (_masterPinCache.value && now - _masterPinCache.ts < 30_000) return _masterPinCache.value;
@@ -1661,11 +1641,7 @@ app.get("/api/admin/sessions", async (c) => {
   const sessionToken = c.req.header("x-session-token") ?? "";
   if (!isMaster) {
     if (!sessionToken) return c.json({ error: "Unauthorized" }, 401);
-    const valid = await sqlClient(
-      `SELECT id FROM admin_sessions WHERE id = $1 AND app_id = $2`,
-      [sessionToken, appId]
-    ) as Array<{id:string}>;
-    if (valid.length === 0) return c.json({ error: "Unauthorized" }, 401);
+    if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
   const rows = await sqlClient(
     `SELECT id, login_time, last_active, user_agent, ip, device FROM admin_sessions WHERE app_id = $1 ORDER BY login_time DESC`,
