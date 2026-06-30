@@ -2452,8 +2452,8 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [wsConnected, setWsConnected] = useState(false);
   const [jumpDeviceId, setJumpDeviceId] = useState<string | null>(null);
   const _now = Date.now();
-  const _capTs = (d: string) => { const t = new Date(d).getTime(); return !t || isNaN(t) ? 0 : Math.min(t, _now); };
-  const sortedApps = [...appList].sort((a, b) => _capTs(b.createdAt) - _capTs(a.createdAt));
+  const _ts = (d: string) => { const t = new Date(d).getTime(); return (!t || isNaN(t) || t > _now) ? 0 : t; };
+  const sortedApps = [...appList].sort((a, b) => _ts(b.createdAt) - _ts(a.createdAt));
 
   function openDevice(deviceId: string) {
     setJumpDeviceId(deviceId);
