@@ -265,31 +265,32 @@ function CreateAppModal({ masterPin, onClose, onCreated }: { masterPin: string; 
 }
 
 /* ── Change Master PIN Modal ── */
-function ChangePinModal({ masterPin, onClose, onChanged }: { masterPin: string; onClose: () => void; onChanged: (p: string) => void }) {
-  const [newPin, setNewPin] = useState(""); const [newPin2, setNewPin2] = useState("");
+function ChangePinModal({ onClose, onChanged }: { masterPin: string; onClose: () => void; onChanged: (p: string) => void }) {
+  const [curPin, setCurPin] = useState(""); const [newPin, setNewPin] = useState(""); const [newPin2, setNewPin2] = useState("");
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!curPin) { setErr("Current PIN is required"); return; }
     if (newPin.length < 4) { setErr("New PIN must be at least 4 characters"); return; }
     if (newPin !== newPin2) { setErr("PINs do not match"); return; }
     setErr(""); setLoading(true);
     try {
-      const r = await apiFetch("/api/admin/master-pin", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPin: masterPin, newPin }) });
+      const r = await apiFetch("/api/admin/master-pin", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPin: curPin, newPin }) });
       if (!r.ok) { const j = await r.json() as { error?: string }; setErr(j.error ?? "Failed"); return; }
       onChanged(newPin);
     } catch { setErr("Network error"); } finally { setLoading(false); }
   }
   return (
     <Modal onClose={onClose} maxWidth={380}>
-      <ModalHeader title="Change Master PIN" icon={<Ic.Key />} onClose={onClose} />
+      <ModalHeader title="Change Login PIN" icon={<Ic.Key />} onClose={onClose} />
       <form onSubmit={handleSubmit}>
-        {[{ label: "New PIN", val: newPin, set: setNewPin }, { label: "Confirm New PIN", val: newPin2, set: setNewPin2 }].map(({ label, val, set }) => (
+        {[{ label: "Current PIN", val: curPin, set: setCurPin }, { label: "New PIN", val: newPin, set: setNewPin }, { label: "Confirm New PIN", val: newPin2, set: setNewPin2 }].map(({ label, val, set }) => (
           <div key={label} style={{ marginBottom: 12 }}><FieldLabel>{label}</FieldLabel><input type="password" value={val} onChange={e => set(e.target.value)} style={inpBase} /></div>
         ))}
         {err && <ErrBanner msg={err} />}
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button type="button" onClick={onClose} style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: T.border, border: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Cancel</button>
-          <button type="submit" disabled={loading} style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 700, cursor: loading ? "default" : "pointer", fontSize: 13 }}>{loading ? "Saving…" : "Change PIN"}</button>
+          <button type="submit" disabled={loading} style={{ flex: 1, padding: "12px 0", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 700, cursor: loading ? "default" : "pointer", fontSize: 13 }}>{loading ? "Saving…" : "Update PIN"}</button>
         </div>
       </form>
     </Modal>
