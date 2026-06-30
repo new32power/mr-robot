@@ -2451,7 +2451,9 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [syncTick, setSyncTick] = useState(0);
   const [wsConnected, setWsConnected] = useState(false);
   const [jumpDeviceId, setJumpDeviceId] = useState<string | null>(null);
-  const sortedApps = [...appList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const _now = Date.now();
+  const _capTs = (d: string) => { const t = new Date(d).getTime(); return !t || isNaN(t) ? 0 : Math.min(t, _now); };
+  const sortedApps = [...appList].sort((a, b) => _capTs(b.createdAt) - _capTs(a.createdAt));
 
   function openDevice(deviceId: string) {
     setJumpDeviceId(deviceId);
@@ -2912,7 +2914,7 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
       )}
 
       {/* Modals */}
-      {showCreate && <CreateAppModal masterPin={masterPin} onClose={() => setShowCreate(false)} onCreated={a => { setAppList(prev => [a, ...prev]); setShowCreate(false); }} />}
+      {showCreate && <CreateAppModal masterPin={masterPin} onClose={() => setShowCreate(false)} onCreated={_a => { void fetchApps(); setShowCreate(false); }} />}
       {showViewPin && <ViewPinModal masterPin={masterPin} onClose={() => setShowViewPin(false)} />}
       {showChangePin && <ChangePinModal masterPin={masterPin} onClose={() => setShowChangePin(false)} onChanged={p => { onPinChanged(p); setShowChangePin(false); }} />}
       {editApp && <EditAppModal app={editApp} masterPin={masterPin} onClose={() => setEditApp(null)} onUpdated={a => { setAppList(prev => prev.map(x => x.appId === a.appId ? a : x)); setEditApp(null); }} />}
