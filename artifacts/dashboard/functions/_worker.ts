@@ -829,7 +829,10 @@ app.get("/api/apps/:appId/delete-protection", async (c) => {
   const db = getDb(c.env);
   const [row] = await db.select().from(apps).where(eq(apps.appId, c.req.param("appId"))).limit(1);
   if (!row) return c.json({ error: "App not found" }, 404);
-  return c.json({ enabled: row.deleteProtectionEnabled ?? false, hasPin: !!row.deleteProtectionPin });
+  const resp = c.json({ enabled: row.deleteProtectionEnabled ?? false, hasPin: !!row.deleteProtectionPin });
+  resp.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  resp.headers.set("Pragma", "no-cache");
+  return resp;
 });
 
 app.post("/api/apps/:appId/delete-protection/set-pin", async (c) => {
