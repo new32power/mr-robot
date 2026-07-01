@@ -2808,6 +2808,10 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
             {wsConnected ? "Live" : "Connecting…"}
           </span>
           <div style={{ flex: 1 }} />
+          {/* Home */}
+          <button onClick={() => setTab("apps")} title="Home" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: tab === "apps" ? T.accent + "22" : T.card, color: tab === "apps" ? T.accentLight : T.muted, flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </button>
           {/* Sync */}
           <button onClick={() => { setSyncTick(t => t + 1); void fetchApps(); }} title="Sync all data" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: T.card, border: `1px solid ${T.borderLight}`, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
             <Ic.Refresh /> <span className="ma-hide-mob">Sync</span>
