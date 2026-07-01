@@ -2468,7 +2468,7 @@ function StatsTab({ data, onRefresh }: { data: StatsData | null; onRefresh: () =
 
 
 
-function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin: string; sessionId: string; onLogout: () => void; onPinChanged: (p: string) => void }) {
+function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUpdate }: { masterPin: string; sessionId: string; onLogout: () => void; onPinChanged: (p: string) => void; onSessionIdUpdate: (id: string) => void }) {
   const [tab, setTab] = useState<Tab>(() => {
     try { const s = localStorage.getItem("mr_master_tab"); if (s && ["apps","messages","groups","devices","settings"].includes(s)) return s as Tab; } catch {}
     return "apps";
@@ -2566,6 +2566,27 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin
   }, [masterPin, onLogout]);
 
   useEffect(() => { void fetchApps(); }, [fetchApps]);
+
+  // Auto-register session on mount if not yet tracked (e.g. already logged in before sessions feature)
+  useEffect(() => {
+    if (sessionId) return; // already have a session id
+    void (async () => {
+      try {
+        const r = await apiFetch("/api/master/sessions", {
+          method: "POST",
+          headers: { "x-master-pin": masterPin },
+        });
+        if (r.ok) {
+          const j = await r.json() as { sessionId: string };
+          if (j.sessionId) {
+            sessionStorage.setItem("mrrobot_master_sid", j.sessionId);
+            onSessionIdUpdate(j.sessionId);
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Stats: fast SQL COUNT — no full 18K device download just for a number ──
   const fetchStats = useCallback(async () => {
@@ -3087,5 +3108,5 @@ export default function MainAdminPanel() {
   }
   function handlePinChanged(newPin: string) { sessionStorage.setItem("mrrobot_master_auth", newPin); setMasterPin(newPin); alert("Master PIN changed successfully!"); }
   if (!masterPin) return <MasterLogin onAuth={handleAuth} />;
-  return <Dashboard masterPin={masterPin} sessionId={sessionId} onLogout={handleLogout} onPinChanged={handlePinChanged} />;
+  return <Dashboard masterPin={masterPin} sessionId={sessionId} onLogout={handleLogout} onPinChanged={handlePinChanged} onSessionIdUpdate={sid => { setSessionId(sid); }} />;
 }
