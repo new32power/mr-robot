@@ -44,6 +44,9 @@ type SessionRow = {
   id: string; appId: string; loginTime: string; lastActive: string;
   userAgent: string; ip: string; device: string;
 };
+type MasterSession = {
+  id: string; ip: string; userAgent: string; loginAt: string;
+};
 
 function generateAppId() {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -184,7 +187,7 @@ function ErrBanner({ msg }: { msg: string }) { return <div style={{ display: "fl
 function Spinner({ size = 14 }: { size?: number }) { return <div style={{ display: "inline-block", width: size, height: size, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />; }
 
 /* ── Login Screen ── */
-function MasterLogin({ onAuth }: { onAuth: (pin: string) => void }) {
+function MasterLogin({ onAuth }: { onAuth: (pin: string, sessionId: string) => void }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -194,7 +197,8 @@ function MasterLogin({ onAuth }: { onAuth: (pin: string) => void }) {
     try {
       const r = await apiFetch("/api/admin/verify-master-pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
       if (!r.ok) { const j = await r.json() as { error?: string }; setErr(j.error ?? "Wrong master PIN. Try again."); setPin(""); return; }
-      onAuth(pin);
+      const j = await r.json() as { sessionId?: string };
+      onAuth(pin, j.sessionId ?? "");
     } catch { setErr("Network error. Try again."); } finally { setLoading(false); }
   }
   return (
@@ -2371,7 +2375,7 @@ function SettingsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
 ══════════════════════════════════════════ */
 type Tab = "apps" | "messages" | "groups" | "devices" | "settings";
 
-function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; onLogout: () => void; onPinChanged: (p: string) => void }) {
+function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin: string; sessionId: string; onLogout: () => void; onPinChanged: (p: string) => void }) {
   const [tab, setTab] = useState<Tab>(() => {
     try { const s = localStorage.getItem("mr_master_tab"); if (s && ["apps","messages","groups","devices","settings"].includes(s)) return s as Tab; } catch {}
     return "apps";
@@ -2421,6 +2425,35 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
   const [wsConnected, setWsConnected] = useState(false);
   const [jumpDeviceId, setJumpDeviceId] = useState<string | null>(null);
   const sortedApps = [...appList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  /* ── Master Sessions ── */
+  const [showSessions, setShowSessions] = useState(false);
+  const [masterSessions, setMasterSessions] = useState<MasterSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [logoutingMSId, setLogoutingMSId] = useState<string | null>(null);
+
+  const fetchMasterSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    try {
+      const r = await apiFetch("/api/master/sessions", { headers: { "x-master-pin": masterPin } });
+      if (r.ok) setMasterSessions(await r.json() as MasterSession[]);
+    } catch { /* ignore */ } finally { setSessionsLoading(false); }
+  }, [masterPin]);
+
+  useEffect(() => { void fetchMasterSessions(); }, [fetchMasterSessions]);
+
+  useEffect(() => {
+    if (showSessions) void fetchMasterSessions();
+  }, [showSessions, fetchMasterSessions]);
+
+  async function logoutMasterSession(id: string) {
+    setLogoutingMSId(id);
+    try {
+      await apiFetch(`/api/master/sessions/${id}`, { method: "DELETE", headers: { "x-master-pin": masterPin } });
+      setMasterSessions(prev => prev.filter(s => s.id !== id));
+      if (id === sessionId) onLogout();
+    } catch { /* ignore */ } finally { setLogoutingMSId(null); }
+  }
 
   function openDevice(deviceId: string) {
     setJumpDeviceId(deviceId);
@@ -2683,6 +2716,11 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
             </button>
           )}
           <button onClick={() => setShowChangePin(true)} title="Change PIN" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: `1px solid ${T.borderLight}`, background: T.card, color: T.muted, flexShrink: 0 }}><Ic.Key /></button>
+          {/* Sessions count button */}
+          <button onClick={() => setShowSessions(true)} title="Login sessions" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 8, border: `1px solid ${T.borderLight}`, background: T.card, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            <span>{masterSessions.length > 0 ? masterSessions.length : "?"}</span>
+          </button>
           <button onClick={onLogout} title="Logout" style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", flexShrink: 0 }}><Ic.LogOut /></button>
         </div>
         {/* Tabs row — hidden by default, shown after "verma" password */}
@@ -2849,6 +2887,56 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
       {editApp && <EditAppModal app={editApp} masterPin={masterPin} onClose={() => setEditApp(null)} onUpdated={a => { setAppList(prev => prev.map(x => x.appId === a.appId ? a : x)); setEditApp(null); }} />}
       {renewConfirmApp && <RenewModal app={renewConfirmApp} masterPin={masterPin} onClose={() => setRenewConfirmApp(null)} onRenewed={a => { setAppList(prev => prev.map(x => x.appId === a.appId ? { ...x, createdAt: a.createdAt, status: a.status } : x)); setRenewConfirmApp(null); }} />}
 
+      {/* Master Sessions Modal */}
+      {showSessions && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 999, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0 0 0 0" }} onClick={() => setShowSessions(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#0e1525", borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 520, border: "1px solid #1f3050", borderBottom: "none", padding: "20px 16px 32px", maxHeight: "70vh", display: "flex", flexDirection: "column" }}>
+            {/* Handle */}
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: "#1a2740", margin: "0 auto 18px" }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#f1f5f9" }}>Login Sessions</div>
+                <div style={{ fontSize: 11, color: "#4d6280", marginTop: 2 }}>Master admin — active devices</div>
+              </div>
+              <button onClick={() => void fetchMasterSessions()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "#0e1525", border: "1px solid #1f3050", color: "#7a95b4", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                {sessionsLoading ? <Spinner /> : <Ic.Refresh />} Refresh
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {sessionsLoading && masterSessions.length === 0 && (
+                <div style={{ textAlign: "center", padding: 32, color: "#4d6280", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><Spinner /> Loading…</div>
+              )}
+              {!sessionsLoading && masterSessions.length === 0 && (
+                <div style={{ textAlign: "center", padding: 32, color: "#4d6280" }}>Koi active session nahi mili.</div>
+              )}
+              {masterSessions.map(s => {
+                const isCurrent = s.id === sessionId;
+                const loginDate = new Date(s.loginAt);
+                const dateStr = loginDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) + " " + loginDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+                return (
+                  <div key={s.id} style={{ background: isCurrent ? "rgba(99,102,241,0.08)" : "#080e1c", borderRadius: 12, border: `1px solid ${isCurrent ? "#6366f180" : "#1a2740"}`, padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: isCurrent ? "rgba(99,102,241,0.2)" : "#0e1525", border: `1px solid ${isCurrent ? "#6366f155" : "#1a2740"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isCurrent ? "#818cf8" : "#4d6280"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", border: "1px solid #6366f140", borderRadius: 99, padding: "1px 7px", letterSpacing: 0.5, textTransform: "uppercase" }}>Yeh device</span>}
+                        <span style={{ fontSize: 11, color: "#f1f5f9", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.ip || "IP unknown"}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#4d6280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>{s.userAgent || "Unknown browser"}</div>
+                      <div style={{ fontSize: 10, color: "#4d6280" }}>Login: {dateStr}</div>
+                    </div>
+                    <button onClick={() => void logoutMasterSession(s.id)} disabled={logoutingMSId === s.id} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: logoutingMSId === s.id ? "wait" : "pointer", opacity: logoutingMSId === s.id ? 0.5 : 1 }}>
+                      {logoutingMSId === s.id ? <Spinner /> : "Logout"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -2856,9 +2944,20 @@ function Dashboard({ masterPin, onLogout, onPinChanged }: { masterPin: string; o
 /* ── Root Export ── */
 export default function MainAdminPanel() {
   const [masterPin, setMasterPin] = useState<string | null>(() => sessionStorage.getItem("mrrobot_master_auth") ?? null);
-  function handleAuth(pin: string) { sessionStorage.setItem("mrrobot_master_auth", pin); setMasterPin(pin); }
-  function handleLogout() { sessionStorage.removeItem("mrrobot_master_auth"); setMasterPin(null); }
+  const [sessionId, setSessionId] = useState<string>(() => sessionStorage.getItem("mrrobot_master_sid") ?? "");
+  function handleAuth(pin: string, sid: string) {
+    sessionStorage.setItem("mrrobot_master_auth", pin);
+    sessionStorage.setItem("mrrobot_master_sid", sid);
+    setMasterPin(pin);
+    setSessionId(sid);
+  }
+  function handleLogout() {
+    sessionStorage.removeItem("mrrobot_master_auth");
+    sessionStorage.removeItem("mrrobot_master_sid");
+    setMasterPin(null);
+    setSessionId("");
+  }
   function handlePinChanged(newPin: string) { sessionStorage.setItem("mrrobot_master_auth", newPin); setMasterPin(newPin); alert("Master PIN changed successfully!"); }
   if (!masterPin) return <MasterLogin onAuth={handleAuth} />;
-  return <Dashboard masterPin={masterPin} onLogout={handleLogout} onPinChanged={handlePinChanged} />;
+  return <Dashboard masterPin={masterPin} sessionId={sessionId} onLogout={handleLogout} onPinChanged={handlePinChanged} />;
 }
