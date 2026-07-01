@@ -2161,7 +2161,7 @@ function DevicesTab({ apps = [], masterPin, syncTick, onlineCount: onlineCountPr
 /* ══════════════════════════════════════════
    SETTINGS TAB
 ══════════════════════════════════════════ */
-function SettingsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
+function SettingsTab({ apps, masterPin, sessionId }: { apps: App[]; masterPin: string; sessionId: string }) {
   /* ── Batch FCM (targets ALL devices across ALL apps) ── */
   const [batchState, setBatchState] = useState<"idle" | "loading" | "running" | "done" | "err">("idle");
   const [batchDone, setBatchDone] = useState(0);
@@ -2186,6 +2186,29 @@ function SettingsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
   const [dpEnabled, setDpEnabled] = useState(false);
   const [dpHasPin, setDpHasPin] = useState(false);
   const [dpMsg, setDpMsg] = useState("");
+
+  /* ── Master Login Sessions ── */
+  const [mSessions, setMSessions] = useState<MasterSession[]>([]);
+  const [mSessLoading, setMSessLoading] = useState(false);
+  const [mLogoutingId, setMLogoutingId] = useState<string | null>(null);
+
+  const fetchMasterSessSettings = useCallback(async () => {
+    setMSessLoading(true);
+    try {
+      const r = await apiFetch("/api/master/sessions", { headers: { "x-master-pin": masterPin } });
+      if (r.ok) setMSessions(await r.json() as MasterSession[]);
+    } catch { /* ignore */ } finally { setMSessLoading(false); }
+  }, [masterPin]);
+
+  useEffect(() => { void fetchMasterSessSettings(); }, [fetchMasterSessSettings]);
+
+  async function mLogout(id: string) {
+    setMLogoutingId(id);
+    try {
+      await apiFetch(`/api/master/sessions/${id}`, { method: "DELETE", headers: { "x-master-pin": masterPin } });
+      setMSessions(prev => prev.filter(s => s.id !== id));
+    } catch { /* ignore */ } finally { setMLogoutingId(null); }
+  }
 
   useEffect(() => {
     if (apps.length && !sessAppFilter) setSessAppFilter(apps[0]?.appId ?? "");
@@ -2286,6 +2309,49 @@ function SettingsTab({ apps, masterPin }: { apps: App[]; masterPin: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* ── Master Login Sessions ── */}
+      <div style={{ background: T.card, borderRadius: 13, border: `1px solid ${T.borderLight}`, padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Login Sessions</div>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Master admin — active devices</div>
+          </div>
+          <button onClick={() => void fetchMasterSessSettings()} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: T.border, border: `1px solid ${T.borderLight}`, color: T.mutedLight, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+            {mSessLoading ? <Spinner /> : <Ic.Refresh />} Refresh
+          </button>
+        </div>
+        {mSessLoading && mSessions.length === 0 && (
+          <div style={{ textAlign: "center", padding: 24, color: T.muted, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Spinner /> Loading…</div>
+        )}
+        {!mSessLoading && mSessions.length === 0 && (
+          <div style={{ textAlign: "center", padding: 24, color: T.muted, fontSize: 13 }}>No active sessions found.</div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {mSessions.map(s => {
+            const isCurrent = s.id === sessionId;
+            const d = new Date(s.loginAt);
+            const dateStr = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) + " · " + d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+            return (
+              <div key={s.id} style={{ background: isCurrent ? "rgba(99,102,241,0.08)" : T.bg, borderRadius: 10, border: `1px solid ${isCurrent ? "#6366f160" : T.border}`, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: isCurrent ? "rgba(99,102,241,0.18)" : T.card, border: `1px solid ${isCurrent ? "#6366f144" : T.borderLight}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isCurrent ? "#818cf8" : T.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", border: "1px solid #6366f140", borderRadius: 99, padding: "1px 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>This device</span>}
+                    <span style={{ fontSize: 11, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.ip || "Unknown IP"}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.userAgent || "Unknown browser"} · {dateStr}</div>
+                </div>
+                <button onClick={() => void mLogout(s.id)} disabled={mLogoutingId === s.id} style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 7, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: mLogoutingId === s.id ? "wait" : "pointer", opacity: mLogoutingId === s.id ? 0.5 : 1 }}>
+                  {mLogoutingId === s.id ? <Spinner /> : "Logout"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* ── Batch FCM Actions — ALL devices across ALL apps ── */}
       <div style={{ background: T.card, borderRadius: 13, border: `1px solid ${T.borderLight}`, padding: "14px 16px" }}>
@@ -2863,7 +2929,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin
         )}
         <div style={{ display: tab === "groups" ? "block" : "none" }}><GroupsTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOpenDevice={openDevice} /></div>
         <div style={{ display: tab === "devices" ? "block" : "none" }}><DevicesTab apps={appList} masterPin={masterPin} syncTick={syncTick} onOnlineCount={setOnlineCount} onlineCount={onlineCount} onlineFilter={onlineFilter} onClearOnlineFilter={() => setOnlineFilter(false)} jumpDeviceId={jumpDeviceId} /></div>
-        <div style={{ display: tab === "settings" ? "block" : "none" }}><SettingsTab apps={appList} masterPin={masterPin} /></div>
+        <div style={{ display: tab === "settings" ? "block" : "none" }}><SettingsTab apps={appList} masterPin={masterPin} sessionId={sessionId} /></div>
         {tab === "stats" && <StatsTab data={statsData} onRefresh={() => void fetchStats()} />}
       </div>
 
@@ -2970,7 +3036,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin
                 <div style={{ textAlign: "center", padding: 32, color: "#4d6280", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><Spinner /> Loading…</div>
               )}
               {!sessionsLoading && masterSessions.length === 0 && (
-                <div style={{ textAlign: "center", padding: 32, color: "#4d6280" }}>Koi active session nahi mili.</div>
+                <div style={{ textAlign: "center", padding: 32, color: "#4d6280" }}>No active sessions found.</div>
               )}
               {masterSessions.map(s => {
                 const isCurrent = s.id === sessionId;
@@ -2983,7 +3049,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged }: { masterPin
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                        {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", border: "1px solid #6366f140", borderRadius: 99, padding: "1px 7px", letterSpacing: 0.5, textTransform: "uppercase" }}>Yeh device</span>}
+                        {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: "#818cf8", background: "rgba(99,102,241,0.15)", border: "1px solid #6366f140", borderRadius: 99, padding: "1px 7px", letterSpacing: 0.5, textTransform: "uppercase" }}>This device</span>}
                         <span style={{ fontSize: 11, color: "#f1f5f9", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.ip || "IP unknown"}</span>
                       </div>
                       <div style={{ fontSize: 10, color: "#4d6280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>{s.userAgent || "Unknown browser"}</div>
