@@ -1391,6 +1391,8 @@ app.post("/api/admin/verify-master-pin", async (c) => {
   const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("x-forwarded-for") ?? "";
   const userAgent = c.req.header("user-agent") ?? "";
   const sqlC = neon(c.env.NEON_DATABASE_URL);
+  // Ensure table exists (may not exist on first ever login)
+  await sqlC(`CREATE TABLE IF NOT EXISTS master_sessions (id TEXT PRIMARY KEY, login_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`).catch(() => {});
   await sqlC(
     `INSERT INTO master_sessions (id, ip, user_agent) VALUES ($1, $2, $3)`,
     [sessionId, ip, userAgent]
