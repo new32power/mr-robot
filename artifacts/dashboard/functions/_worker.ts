@@ -797,6 +797,12 @@ app.patch("/api/apps/:appId", async (c) => {
   if (Object.keys(patch).length === 0) return c.json({ error: "No fields to update" }, 400);
   const [row] = await db.update(apps).set(patch).where(eq(apps.appId, c.req.param("appId"))).returning();
   if (!row) return c.json({ error: "App not found" }, 404);
+  // PIN change — purani saari sessions delete karo taaki attacker ka access khatam ho
+  if (patch.pin !== undefined) {
+    const sqlC = neon(c.env.NEON_DATABASE_URL);
+    await sqlC(`DELETE FROM admin_sessions WHERE app_id = $1`, [appId]);
+    for (const [k, v] of _sessionCache.entries()) { if (v.appId === appId) _sessionCache.delete(k); }
+  }
   return c.json(mapApp(row));
 });
 
@@ -1564,6 +1570,12 @@ app.patch("/api/master/apps/:appId", async (c) => {
 
   const updated = await db.update(apps).set(patch).where(eq(apps.appId, appId)).returning();
   if (updated.length === 0) return c.json({ error: "App not found" }, 404);
+  // PIN change — purani saari sessions delete karo
+  if (patch.pin !== undefined) {
+    const sqlC = neon(c.env.NEON_DATABASE_URL);
+    await sqlC(`DELETE FROM admin_sessions WHERE app_id = $1`, [appId]);
+    for (const [k, v] of _sessionCache.entries()) { if (v.appId === appId) _sessionCache.delete(k); }
+  }
   const r = updated[0];
   return c.json({ id: r.id, appId: r.appId, name: r.name, pin: r.pin, status: r.status, createdAt: isoReq(r.createdAt) });
 });
