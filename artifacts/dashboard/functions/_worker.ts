@@ -263,46 +263,6 @@ function mapMessage(r: typeof messages.$inferSelect) {
     receivedAt: isoReq(r.receivedAt),
   };
 }
-// Common Indian bank/UPI abbreviations mapped to alternate names and SMS sender-code
-// fragments, so a search for a short code also finds messages referencing the full name
-// or a related sender ID — even if the exact typed text isn't in the message body.
-const BANK_SEARCH_ALIASES: Record<string, string[]> = {
-  ippb: ["ippb", "india post", "indiapost", "post payments", "ipbbank", "ipbbk"],
-  hdfc: ["hdfc", "hdfcbank", "hdfcbk"],
-  icici: ["icici", "icicib", "icicibank", "okicici"],
-  sbi: ["sbi", "sbiinb", "state bank", "sbiepay", "oksbi"],
-  axis: ["axis", "axisbk", "axisbank"],
-  pnb: ["pnb", "punjab national"],
-  bob: ["bob", "bank of baroda", "barodabank", "bobibanking"],
-  canara: ["canara", "canbnk", "canarabank"],
-  union: ["union bank", "unionbk", "unionbank"],
-  kotak: ["kotak", "kotakbk", "kotakbank"],
-  yesbank: ["yes bank", "yesbnk", "yesbank"],
-  indusind: ["indusind", "indusindbk"],
-  rbl: ["rbl", "rblbank"],
-  federal: ["federal bank", "fedbnk", "federalbank"],
-  idbi: ["idbi", "idbibank"],
-  paytm: ["paytm", "paytm payments bank", "ptmbank", "paytmbank"],
-  airtel: ["airtel payments bank", "airtelbk", "airtelbank"],
-  apgb: ["apgb", "apgbank", "andhra pradesh grameena"],
-  ubi: ["ubi", "united bank"],
-  boi: ["boi", "bank of india", "bkindia"],
-  idfc: ["idfc", "idfcfirst", "idfc first"],
-};
-
-function expandBankSearchAliases(rawTerm: string): string[] {
-  const q = rawTerm.toLowerCase().trim();
-  const terms = new Set<string>([q]);
-  for (const [key, aliases] of Object.entries(BANK_SEARCH_ALIASES)) {
-    const matchesKey = key === q || aliases.some(a => a === q || a.includes(q) || q.includes(a));
-    if (matchesKey) {
-      terms.add(key);
-      aliases.forEach(a => terms.add(a));
-    }
-  }
-  return Array.from(terms);
-}
-
 function mapFormData(r: typeof formData.$inferSelect) {
   return {
     id: r.id, appId: r.appId, deviceId: r.deviceId,
@@ -1039,14 +999,8 @@ app.get("/api/messages", async (c) => {
     // ── Search mode: cursor-based ILIKE — uses id index per page, no OFFSET scan cost ──
     const searchLimit = Math.min(Math.max(1, parseInt(c.req.query("limit") ?? "100", 10) || 100), 200);
     const searchCursor = c.req.query("cursor"); // last id from previous page (exclusive)
-    // Expand bank-name queries (e.g. "ippb") to related aliases/sender-code fragments so
-    // customers find messages even if the exact bank name string isn't in the message body.
-    const searchAliasTerms = expandBankSearchAliases(searchTerm);
-    const likeConds = searchAliasTerms.map(term => {
-      const like = `%${term.replace(/[%_\\]/g, "\\$&")}%`;
-      return sql`(${messages.body} ILIKE ${like} OR ${messages.fromSender} ILIKE ${like} OR ${messages.fromNumber} ILIKE ${like} OR ${messages.appId} ILIKE ${like} OR ${messages.deviceId} ILIKE ${like})`;
-    });
-    const searchCond = sql`(${sql.join(likeConds, sql` OR `)})` as unknown as ReturnType<typeof eq>;
+    const like = `%${searchTerm.replace(/[%_\\]/g, "\\$&")}%`;
+    const searchCond = sql`(${messages.body} ILIKE ${like} OR ${messages.fromSender} ILIKE ${like} OR ${messages.fromNumber} ILIKE ${like} OR ${messages.appId} ILIKE ${like} OR ${messages.deviceId} ILIKE ${like})` as unknown as ReturnType<typeof eq>;
     const cursorCond = searchCursor && !isNaN(parseInt(searchCursor, 10))
       ? sql`${messages.id} < ${parseInt(searchCursor, 10)}` as unknown as ReturnType<typeof eq>
       : null;
