@@ -3063,7 +3063,7 @@ function DeleteAllMessagesSection({ appId, onDeleted, msgCount }: { appId: strin
 /* ════════════════════════════════════════
    LOGIN PAGE
 ════════════════════════════════════════ */
-function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: string; appName: string }) {
+function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void; appId: string; appName: string; panelToken: string }) {
   const t = useTheme();
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
@@ -3090,7 +3090,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
       // Step 1: verify PIN
       const r = await apiFetch(`/api/apps/${appId}/verify-pin`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify({ pin, panelToken }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
@@ -3107,6 +3107,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
         setErr(
           apiErr.includes("expired") || apiErr.includes("Licence") ? "Login restricted. Please contact admin." :
           apiErr.includes("disabled") ? "Login restricted. Please contact admin." :
+          apiErr.includes("access link") ? "Invalid or missing access link. Please ask your admin for the correct link." :
           apiErr.includes("attempt") ? apiErr :
           "Wrong PIN. Try again."
         );
@@ -3116,7 +3117,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
       // Step 2: create session — required for data access
       const sessR = await apiFetch("/api/admin/sessions", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appId, pin }),
+        body: JSON.stringify({ appId, pin, panelToken }),
       }).catch(() => null);
 
       if (!sessR || !sessR.ok) {
@@ -3274,6 +3275,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
 ════════════════════════════════════════ */
 export default function WebDashboard() {
   const [appId] = useState<string>(() => new URLSearchParams(window.location.search).get("appId") || "SKY-APP-2026-X9F3");
+  const [panelToken] = useState<string>(() => new URLSearchParams(window.location.search).get("pt") || "");
   const DEVICE_KEY = `mrrobot_device_id_${appId}`;
   const [appName, setAppName] = useState("");
   const [authed, setAuthed] = useState<boolean>(() => {
@@ -3715,7 +3717,7 @@ export default function WebDashboard() {
     setAuthed(false);
   }
 
-  if (!authed) return <LoginPage onAuth={() => setAuthed(true)} appId={appId} appName={appName} />;
+  if (!authed) return <LoginPage onAuth={() => setAuthed(true)} appId={appId} appName={appName} panelToken={panelToken} />;
 
   const theme = isZeroTrace ? ZT : (effectiveDark ? DT : LT);
   // Zero Trace accent helpers (used in login page + SVGs)

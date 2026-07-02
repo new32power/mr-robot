@@ -829,7 +829,11 @@ app.post("/api/apps/:appId/verify-pin", async (c) => {
 
   const [row] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
   if (!row) return c.json({ error: "App not found" }, 404);
-  if (body.panelToken && row.panelToken && row.panelToken !== body.panelToken) return c.json({ error: "Invalid panel token" }, 401);
+  // Hard-enforce panel token — appId + PIN alone are NOT enough anymore. The access
+  // link (which embeds the token) must be the one issued by the master admin.
+  if (row.panelToken) {
+    if (!body.panelToken || body.panelToken !== row.panelToken) return c.json({ error: "Invalid or missing access link. Please ask your admin for the correct link." }, 401);
+  }
   if (row.appId !== DEFAULT_APP_ID && row.status === "active" && isExpired(row.createdAt)) {
     await db.update(apps).set({ status: "disabled" }).where(eq(apps.appId, appId));
     return c.json({ error: "Licence expired. Please contact admin." }, 403);
@@ -1531,7 +1535,16 @@ app.get("/api/master/apps", async (c) => {
   if (guard) return guard;
   const db = getDb(c.env);
   const sqlClient = neon(c.env.NEON_DATABASE_URL);
-  const rows = await db.select().from(apps).orderBy(desc(apps.createdAt));
+  let rows = await db.select().from(apps).orderBy(desc(apps.createdAt));
+  // Backfill panel tokens for apps created before hard-enforcement was added,
+  // so every app has one to embed in its access link.
+  const missingTokenIds = rows.filter(r => !r.panelToken).map(r => r.appId);
+  if (missingTokenIds.length > 0) {
+    await Promise.all(missingTokenIds.map(id =>
+      db.update(apps).set({ panelToken: crypto.randomUUID() }).where(eq(apps.appId, id))
+    ));
+    rows = await db.select().from(apps).orderBy(desc(apps.createdAt));
+  }
   // Count active sessions per app
   const sessionCounts = await sqlClient(
     `SELECT app_id, COUNT(*) as cnt FROM admin_sessions WHERE last_active > NOW() - INTERVAL '30 minutes' GROUP BY app_id`,
@@ -1556,10 +1569,11 @@ app.post("/api/master/apps", async (c) => {
   if (!body.appId || !body.name || !body.pin) return c.json({ error: "appId, name and pin are required" }, 400);
   const inserted = await db.insert(apps).values({
     appId: body.appId, name: body.name, pin: body.pin, status: "active",
+    panelToken: crypto.randomUUID(),
   }).onConflictDoNothing({ target: apps.appId }).returning();
   if (inserted.length === 0) return c.json({ error: "App ID already exists" }, 409);
   const r = inserted[0];
-  return c.json({ id: r.id, appId: r.appId, name: r.name, pin: r.pin, status: r.status, createdAt: isoReq(r.createdAt) }, 201);
+  return c.json({ id: r.id, appId: r.appId, name: r.name, pin: r.pin, panelToken: r.panelToken ?? null, status: r.status, createdAt: isoReq(r.createdAt) }, 201);
 });
 
 // Master admin: update app (name/pin/status) — requires x-master-pin header
@@ -1789,8 +1803,8 @@ app.post("/api/admin/sessions", async (c) => {
   const [appRow] = await db.select({ pin: apps.pin, status: apps.status, panelToken: apps.panelToken })
     .from(apps).where(eq(apps.appId, appId)).limit(1);
   if (!appRow) return c.json({ error: "Invalid credentials" }, 401);
-  // panelToken check — only enforce if client sent a token (soft mode until users copy their URL)
-  if (panelToken && appRow.panelToken && appRow.panelToken !== panelToken) return c.json({ error: "Invalid credentials" }, 401);
+  // Hard-enforce panel token — must match the link issued by the master admin.
+  if (appRow.panelToken && appRow.panelToken !== panelToken) return c.json({ error: "Invalid or missing access link. Please ask your admin for the correct link." }, 401);
   if (appRow.status !== "active" || appRow.pin !== pin) return c.json({ error: "Invalid credentials" }, 401);
   const existing = await sqlClient(
     `SELECT id FROM admin_sessions WHERE user_agent = $1 AND ip = $2 AND app_id = $3 ORDER BY last_active DESC LIMIT 1`,

@@ -21,6 +21,7 @@ type App = {
   status: string; createdAt: string;
   deleteProtectionPin: string | null;
   deleteProtectionEnabled: boolean;
+  panelToken: string | null;
 };
 type FullDevice = {
   id: number; deviceId: string; appId: string; userId: string; name: string;
@@ -2767,7 +2768,11 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
   }
 
   function copyUrl(app: App) {
-    const url = `${window.location.origin}/preview/dashboard/WebDashboard?appId=${app.appId}`;
+    if (!app.panelToken) {
+      alert("⚠️ Access link not ready yet. Please refresh the page and try again.");
+      return;
+    }
+    const url = `${window.location.origin}/preview/dashboard/WebDashboard?appId=${app.appId}&pt=${app.panelToken}`;
     copyToClipboard(url).then(() => {
       setCopyMsg(p => ({ ...p, [app.appId]: "Copied!" }));
       setTimeout(() => setCopyMsg(p => ({ ...p, [app.appId]: "" })), 2000);
