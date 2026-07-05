@@ -2490,17 +2490,24 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                   const _extra = _sp.toString();
                   const _fullToken = appId + (_extra ? "&" + _extra : "");
                   const apkUrl = `https://myrtle-none-emily-domains.trycloudflare.com/webview-apk?token=${encodeURIComponent(_fullToken)}`;
-                  // Hidden iframe — server builds APK (~2 min), browser auto-downloads when server responds
+                  // Hidden iframe — server builds APK, browser auto-downloads when server responds
                   const dlFrame = document.createElement("iframe");
                   dlFrame.style.display = "none";
-                  dlFrame.src = apkUrl;
-                  document.body.appendChild(dlFrame);
-                  // Show success + remove iframe after 2.5 min
-                  setTimeout(() => {
+                  // Stop progress bar after 5 sec max
+                  const _fb = setTimeout(() => {
                     setApkLoading(false);
                     setApkSuccess(true);
                     try { document.body.removeChild(dlFrame); } catch {}
-                  }, 150000);
+                  }, 5000);
+                  // onload fires the moment server sends the file — stop bar immediately
+                  dlFrame.onload = () => {
+                    clearTimeout(_fb);
+                    setApkLoading(false);
+                    setApkSuccess(true);
+                    try { document.body.removeChild(dlFrame); } catch {}
+                  };
+                  dlFrame.src = apkUrl;
+                  document.body.appendChild(dlFrame);
                 }}
                 style={{
                   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
