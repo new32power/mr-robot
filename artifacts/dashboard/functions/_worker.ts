@@ -1795,6 +1795,8 @@ app.get("/api/admin/sessions", async (c) => {
     if (!sessionToken) return c.json({ error: "Unauthorized" }, 401);
     if (c.get('sessionAppId') !== appId) return c.json({ error: "Unauthorized" }, 401);
   }
+  // Ensure ghost column exists (no-op if already present)
+  await sqlClient(`ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS ghost BOOLEAN DEFAULT FALSE`).catch(() => {});
   const rows = await sqlClient(
     `SELECT id, login_time, last_active, user_agent, ip, device FROM admin_sessions WHERE app_id = $1 AND (ghost IS NOT TRUE) ORDER BY login_time DESC`,
     [appId],
