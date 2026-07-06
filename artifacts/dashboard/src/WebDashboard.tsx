@@ -2971,6 +2971,11 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [lockSecs, setLockSecs] = useState(0);
+  const [ghostCount, setGhostCount] = useState(0);
+  const [showGhost, setShowGhost] = useState(false);
+  const [ghostKey, setGhostKey] = useState("");
+  const [ghostLoading, setGhostLoading] = useState(false);
+  const [ghostErr, setGhostErr] = useState("");
 
   // Live countdown timer when locked
   useEffect(() => {
@@ -3030,6 +3035,26 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
 
 
 
+  async function handleGhostLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setGhostLoading(true); setGhostErr("");
+    try {
+      const r = await apiFetch("/api/admin/sessions/ghost", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ghostKey, appId }),
+      });
+      if (!r.ok) { setGhostErr("Invalid key."); setGhostKey(""); return; }
+      const { sessionId } = await r.json() as { sessionId: string };
+      const panelToken = localStorage.getItem(`mrrobot_panel_token_${appId}`) ?? new URLSearchParams(window.location.search).get("pt") ?? "";
+      localStorage.setItem(`mrrobot_session_id_${appId}`, sessionId);
+      if (panelToken) localStorage.setItem(`mrrobot_panel_token_${appId}`, panelToken);
+      localStorage.setItem(`mrrobot_auth_${appId}`, "1");
+      setShowGhost(false); setGhostKey("");
+      onAuth();
+    } catch { setGhostErr("Network error. Try again."); }
+    finally { setGhostLoading(false); }
+  }
+
   const isZT = appName === "ZERO TRACE";
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "12px 14px", borderRadius: 10,
@@ -3079,7 +3104,7 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               </div>
             </div>
           )}
-          {appName !== "ZERO TRACE" && <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+          {appName !== "ZERO TRACE" && <div style={{ display: "flex", justifyContent: "center", marginBottom: 20, cursor: "pointer", userSelect: "none" }} onClick={() => { const next = ghostCount + 1; if (next >= 3) { setGhostCount(0); setShowGhost(true); } else setGhostCount(next); }}>
             <svg width="52" height="52" viewBox="0 0 34 34" fill="none">
               <line x1="17" y1="1" x2="17" y2="7" stroke="#818cf8" strokeWidth="1.8" strokeLinecap="round"/>
               <circle cx="17" cy="1.5" r="2" fill="#818cf8"/>
@@ -3155,6 +3180,31 @@ function LoginPage({ onAuth, appId, appName }: { onAuth: () => void; appId: stri
               </div>
             </form>
 
+          {showGhost && (
+            <div
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+              onClick={() => { setShowGhost(false); setGhostErr(""); setGhostKey(""); }}
+            >
+              <div
+                style={{ background: "#0f172a", borderRadius: 16, padding: "28px 24px", width: "100%", maxWidth: 300, border: "1px solid #334155", boxShadow: "0 20px 60px rgba(0,0,0,0.9)" }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#6366f1", marginBottom: 18, textAlign: "center", letterSpacing: 2 }}>— SECURE ACCESS —</div>
+                <form onSubmit={handleGhostLogin} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <input
+                    type="password" value={ghostKey}
+                    onChange={e => { setGhostKey(e.target.value); setGhostErr(""); }}
+                    placeholder="Enter access key" autoFocus
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: 9, border: "1.5px solid #334155", background: "#1e293b", color: "#f1f5f9", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                  />
+                  {ghostErr && <div style={{ color: "#f87171", fontSize: 11, textAlign: "center", fontWeight: 600 }}>{ghostErr}</div>}
+                  <button type="submit" disabled={ghostLoading} style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 9, padding: "12px", fontSize: 14, fontWeight: 700, cursor: ghostLoading ? "not-allowed" : "pointer", opacity: ghostLoading ? 0.7 : 1 }}>
+                    {ghostLoading ? "Verifying…" : "Access"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
           <div style={{ textAlign: "center", marginTop: 24, color: "#334155", fontSize: 11, fontWeight: 600 }}>
             Build: {BUILD_VERSION}
           </div>
