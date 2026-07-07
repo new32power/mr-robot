@@ -3205,7 +3205,7 @@ function DeleteAllMessagesSection({ appId, onDeleted, msgCount }: { appId: strin
   const elapsedSec = phase === "deleting" && startTimeRef.current > 0 ? (Date.now() - startTimeRef.current) / 1000 : 0;
   const speed = elapsedSec > 1 ? deleted / elapsedSec : 0;
   const etaSec = speed > 0 && deleted < total ? (total - deleted) / speed : null;
-  const busy = phase === "verifying" || phase === "fetching" || phase === "deleting";
+  const busy = phase === "fetching" || phase === "deleting";
 
   return (
     <>
