@@ -3239,6 +3239,7 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
   const [complaintStep,    setComplaintStep]    = useState<"welcome"|"form"|"sent">("welcome");
   const [complaintLang,    setComplaintLang]    = useState<"hindi"|"english"|null>("english");
   const [adminReplies,     setAdminReplies]     = useState<string[]>([]);
+  const [sentMessages,     setSentMessages]     = useState<string[]>([]);
   const adminReplyPollRef = useRef<ReturnType<typeof setInterval>|null>(null);
 
   // Live countdown timer when locked
@@ -3417,6 +3418,9 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
           }
         }),
       });
+      const sent = complaintText.trim();
+      setSentMessages(prev => [...prev, sent]);
+      setComplaintText("");
       setComplaintStep("sent");
     } catch { /* silent */ }
     setComplaintSending(false);
@@ -3694,9 +3698,9 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
               </div>
             )}
 
-            {/* User complaint bubble — on askMore/thanks */}
-            {(complaintStep==="sent")&&complaintText&&(
-              <div style={{display:"flex",justifyContent:"flex-end"}}>
+            {/* User complaint bubbles — one per sent message */}
+            {sentMessages.map((m, idx) => (
+              <div key={"sm"+idx} style={{display:"flex",justifyContent:"flex-end"}}>
                 <div style={{background:"linear-gradient(135deg,#6366f1,#4f46e5)",
                   borderRadius:"14px 4px 14px 14px",padding:"12px 16px",maxWidth:"82%",
                   boxShadow:"0 2px 10px rgba(99,102,241,0.35)"}}>
@@ -3707,10 +3711,10 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
                     </svg>
                     Sent
                   </div>
-                  <div style={{fontSize:13,color:"#fff",lineHeight:1.65}}>{complaintText}</div>
+                  <div style={{fontSize:13,color:"#fff",lineHeight:1.65}}>{m}</div>
                 </div>
               </div>
-            )}
+            ))}
 
             {/* Sent confirmation bubble */}
             {(complaintStep==="sent")&&(
@@ -3779,8 +3783,8 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
               </button>
             )}
 
-            {/* FORM: WhatsApp-style row — auto-grow textarea + round send button */}
-            {complaintStep==="form"&&(
+            {/* FORM/SENT: WhatsApp-style row — always visible after first message */}
+            {(complaintStep==="form"||complaintStep==="sent")&&(
               <div style={{display:"flex",alignItems:"flex-end",gap:10}}>
                 <textarea
                   value={complaintText}
