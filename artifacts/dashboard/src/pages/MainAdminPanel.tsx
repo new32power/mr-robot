@@ -2586,7 +2586,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
   const [regenTokenId, setRegenTokenId] = useState<string | null>(null);
   const [renewConfirmApp, setRenewConfirmApp] = useState<App | null>(null);
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month">("all");
+  const [dateFilter, setDateFilter] = useState<"all"|"today"|"yesterday"|"week"|"month"|"30plus">("all");
   const [pingState, setPingState] = useState<"idle" | "loading" | "running" | "done" | "err">("idle");
   const [pingDone, setPingDone] = useState(0);
   const [pingTotal, setPingTotal] = useState(0);
@@ -2814,6 +2814,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
       if (dateFilter === "yesterday" && (created < yesterday || created >= today)) return false;
       if (dateFilter === "week"      && created < weekAgo)   return false;
       if (dateFilter === "month"     && created < monthAgo)  return false;
+      if (dateFilter === "30plus"   && created >= monthAgo) return false;
     }
     if (search.trim() === "") return true;
     return a.appId.toLowerCase().includes(search.trim().toLowerCase()) || a.name.toLowerCase().includes(search.trim().toLowerCase());
@@ -2975,6 +2976,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
                   <option value="yesterday">Yesterday</option>
                   <option value="week">Last 7 Days</option>
                   <option value="month">Last 30 Days</option>
+                  <option value="30plus">30+ Days Old</option>
                 </select>
                 <button onClick={() => { setCreateGateInput(""); setCreateGateError(""); setCreateGateShow(false); setShowCreateGate(true); }} className="ma-hide-mob" style={{ padding: "8px 16px", borderRadius: 10, background: "linear-gradient(135deg,#5254d4,#7c3aed)", border: "none", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}><Ic.Plus /> New App</button>
               </div>
