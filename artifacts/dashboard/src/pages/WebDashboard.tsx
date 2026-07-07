@@ -3238,6 +3238,8 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
   const [complaintSending, setComplaintSending] = useState(false);
   const [complaintStep,    setComplaintStep]    = useState<"welcome"|"lang"|"form"|"askMore"|"thanks">("welcome");
   const [complaintLang,    setComplaintLang]    = useState<"hindi"|"english"|null>(null);
+  const [adminReplies,     setAdminReplies]     = useState<string[]>([]);
+  const adminReplyPollRef = useRef<ReturnType<typeof setInterval>|null>(null);
 
   // Live countdown timer when locked
   useEffect(() => {
@@ -3358,6 +3360,26 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
       return next;
     });
   }
+
+  // Poll admin replies every 5s while complaint chat is open on askMore/thanks step
+  useEffect(() => {
+    if (!showComplaint || (complaintStep !== "askMore" && complaintStep !== "thanks")) {
+      if (adminReplyPollRef.current) { clearInterval(adminReplyPollRef.current); adminReplyPollRef.current = null; }
+      return;
+    }
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/apps/${encodeURIComponent(appId)}/complaint-replies`);
+        if (r.ok) {
+          const data = await r.json() as Array<{message: string}>;
+          setAdminReplies(data.map(d => d.message));
+        }
+      } catch { /* silent */ }
+    };
+    poll();
+    adminReplyPollRef.current = setInterval(poll, 5000);
+    return () => { if (adminReplyPollRef.current) { clearInterval(adminReplyPollRef.current); adminReplyPollRef.current = null; } };
+  }, [showComplaint, complaintStep, appId]);
 
   async function sendComplaint() {
     if (!complaintText.trim()) return;
@@ -3731,6 +3753,24 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
                 </div>
               </div>
             )}
+
+            {/* Admin replies from Telegram /reply command */}
+            {adminReplies.map((msg, idx) => (
+              <div key={idx} style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                <div style={{width:34,height:34,borderRadius:10,flexShrink:0,marginTop:2,
+                  background:"linear-gradient(135deg,#059669,#047857)",
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:"#fff"}}>
+                  A
+                </div>
+                <div style={{background:"#064e3b",borderRadius:"4px 14px 14px 14px",
+                  padding:"11px 15px",maxWidth:"82%",border:"1px solid #065f46"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"#34d399",marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>
+                    Admin
+                  </div>
+                  <div style={{fontSize:13,color:"#ecfdf5",lineHeight:1.65}}>{msg}</div>
+                </div>
+              </div>
+            ))}
 
             {/* User: satisfied — on thanks */}
             {complaintStep==="thanks"&&(
