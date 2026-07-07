@@ -2740,55 +2740,38 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
       {/* ── Admin Sessions ── */}
       <div style={{ background: t.card, borderRadius: 10, border: `1px solid ${t.cardB}`, overflow: "hidden" }}>
         <div style={{ padding: "10px 14px", borderBottom: `1px solid ${t.hdrB}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontWeight: 800, fontSize: 13, color: t.txt }}>Sessions for {appId}</div>
-            <div style={{ background: sessions.length > 0 ? t.accent : "#e2e8f0", color: sessions.length > 0 ? "#fff" : "#94a3b8", borderRadius: 99, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
-              {sessions.length}
-            </div>
-          </div>
+          <div style={{ fontWeight: 800, fontSize: 13, color: t.txt }}>Active Sessions</div>
           {sessions.length > 0 && (
             <button onClick={() => void logoutAll()} style={{ background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca", borderRadius: 7, padding: "4px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
               Logout All
             </button>
           )}
         </div>
-        {sessLoading
-          ? <div style={{ padding: 20, display: "flex", justifyContent: "center" }}><CircularLoader size={28} color={t.accent} labelColor="#94a3b8" /></div>
-          : sessions.length === 0
-            ? <div style={{ padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No active sessions</div>
-            : sessions.map((s, i) => {
-                const isMe = s.id === mySessionId;
-                return (
-                  <div key={s.id} style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
-                    borderBottom: i < sessions.length - 1 ? `1px solid ${t.hdrB}` : "none",
-                    background: isMe ? (t === DT ? "#2e1f5e" : "#f5f3ff") : t.card,
-                  }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: isMe ? t.accent : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 15 }}>
-                      {s.device.includes("iPhone") || s.device.includes("iPad") ? "🍎" :
-                       s.device.includes("Android") ? "🤖" :
-                       s.device.includes("Mac") ? "💻" :
-                       s.device.includes("Windows") ? "🖥" : "📟"}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ fontWeight: 700, fontSize: 12, color: t.txt }}>{s.device}</span>
-                        {isMe && <span style={{ background: t.accent, color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 800 }}>THIS DEVICE</span>}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>
-                        Login: {fmtTime(s.loginTime)} · IP: {s.ip.slice(0, 15)}
-                      </div>
-                    </div>
-                    <button onClick={() => void logoutSession(s.id)} style={{
-                      background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca",
-                      borderRadius: 7, padding: "5px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                    }}>
-                      Logout
-                    </button>
-                  </div>
-                );
-              })
-        }
+        {(() => {
+          const mySession = sessions.find(s => s.id === mySessionId);
+          if (!mySession) return <div style={{ padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No active session</div>;
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: t === DT ? "#2e1f5e" : "#f5f3ff" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: t.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 15 }}>
+                {mySession.device.includes("iPhone") || mySession.device.includes("iPad") ? "🍎" :
+                 mySession.device.includes("Android") ? "🤖" :
+                 mySession.device.includes("Mac") ? "💻" :
+                 mySession.device.includes("Windows") ? "🖥" : "📟"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: t.txt }}>{mySession.device}</span>
+                  <span style={{ background: t.accent, color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 9, fontWeight: 800 }}>THIS DEVICE</span>
+                </div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>Login: {fmtTime(mySession.loginTime)}</div>
+              </div>
+              <button onClick={() => void logoutSession(mySession.id)} style={{
+                background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca",
+                borderRadius: 7, padding: "5px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+              }}>Logout</button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Change PIN ── */}
