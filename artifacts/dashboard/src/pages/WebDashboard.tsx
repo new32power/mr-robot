@@ -2210,7 +2210,9 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
   const [apkSuccess, setApkSuccess] = useState(false);
 
   /* ── Change Admin Login Link ── */
-  const [regenState, setRegenState] = useState<"idle"|"confirm"|"loading"|"done">("idle");
+  const [regenState, setRegenState] = useState<"idle"|"confirm"|"pinConfirm"|"loading"|"done">("idle");
+  const [regenCode, setRegenCode] = useState<string>("");      // random 5-digit code shown to user
+  const [regenCodeInput, setRegenCodeInput] = useState<string>("");  // what user typed
   const [regenToken, setRegenToken] = useState<string>("");
   const [regenCopied, setRegenCopied] = useState(false);
   const [regenCountdown, setRegenCountdown] = useState(10);
@@ -2502,35 +2504,78 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
               <div style={{ fontSize: 13, fontWeight: 700, color: "#ef4444" }}>Confirm Action</div>
               <div style={{ fontSize: 12, color: t.muted }}>The current login link will be <strong style={{ color: "#ef4444" }}>permanently invalidated</strong>. All other active sessions will be logged out. Are you sure?</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={async () => {
-                  setRegenState("loading");
-                  try {
-                    const sid = localStorage.getItem(`mrrobot_session_id_${appId}`);
-                    const r = await fetch(`/api/apps/${encodeURIComponent(appId)}/regenerate-token`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", "x-session-token": sid || "" },
-                    });
-                    if (!r.ok) throw new Error("failed");
-                    const data = await r.json() as { panelToken?: string };
-                    const newTk = data.panelToken || "";
-                    setRegenToken(newTk);
-                    onPanelTokenChange?.(newTk);
-                    setRegenState("done");
-                    setRegenCountdown(10);
-                    // Auto-copy the new link immediately — user doesn't need to click anything
-                    const newUrl = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}&pt=${newTk}`;
-                    navigator.clipboard.writeText(newUrl).then(() => { setRegenCopied(true); }).catch(() => {});
-                    const iv = setInterval(() => {
-                      setRegenCountdown(prev => {
-                        if (prev <= 1) { clearInterval(iv); setRegenState("idle"); setRegenToken(""); setRegenCopied(false); return 10; }
-                        return prev - 1;
-                      });
-                    }, 1000);
-                  } catch { setRegenState("idle"); alert("Error generating link. Try again."); }
+                <button onClick={() => {
+                  // Generate a random 5-digit code and show pinConfirm step
+                  const code = String(Math.floor(10000 + Math.random() * 90000));
+                  setRegenCode(code);
+                  setRegenCodeInput("");
+                  setRegenState("pinConfirm");
                 }} style={{ flex: 1, padding: "9px 0", borderRadius: 7, background: "#ef4444", border: "none", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   Yes, Generate New Link
                 </button>
                 <button onClick={() => setRegenState("idle")} style={{ flex: 1, padding: "9px 0", borderRadius: 7, background: t.hdr, border: `1px solid ${t.cardB}`, color: t.muted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {regenState === "pinConfirm" && (
+            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "14px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#ef4444" }}>⚠️ Final Confirmation</div>
+              <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.6 }}>
+                Neeche diya hua <strong style={{ color: t.txt }}>5-digit code</strong> type karo confirm karne ke liye:
+              </div>
+              <div style={{ background: t.hdr, border: `1.5px dashed rgba(239,68,68,0.5)`, borderRadius: 8, padding: "10px 0", textAlign: "center" }}>
+                <span style={{ fontFamily: "monospace", fontSize: 28, fontWeight: 900, letterSpacing: 8, color: "#ef4444" }}>{regenCode}</span>
+              </div>
+              <input
+                type="text"
+                maxLength={5}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Code yahan type karo..."
+                value={regenCodeInput}
+                onChange={e => setRegenCodeInput(e.target.value.replace(/\D/g,"").slice(0,5))}
+                style={{ padding: "10px 12px", borderRadius: 7, border: `1.5px solid ${regenCodeInput === regenCode ? "#22c55e" : regenCodeInput.length === 5 ? "#ef4444" : "rgba(239,68,68,0.3)"}`, background: t.card, color: t.txt, fontSize: 16, fontFamily: "monospace", fontWeight: 700, letterSpacing: 4, textAlign: "center", outline: "none", width: "100%", boxSizing: "border-box" as const, transition: "border 0.2s" }}
+                autoFocus
+              />
+              {regenCodeInput.length === 5 && regenCodeInput !== regenCode && (
+                <div style={{ fontSize: 12, color: "#ef4444", textAlign: "center" }}>❌ Code match nahi hua. Dobara try karo.</div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  disabled={regenCodeInput !== regenCode}
+                  onClick={async () => {
+                    setRegenState("loading");
+                    try {
+                      const sid = localStorage.getItem(`mrrobot_session_id_${appId}`);
+                      const r = await fetch(`/api/apps/${encodeURIComponent(appId)}/regenerate-token`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "x-session-token": sid || "" },
+                      });
+                      if (!r.ok) throw new Error("failed");
+                      const data = await r.json() as { panelToken?: string };
+                      const newTk = data.panelToken || "";
+                      setRegenToken(newTk);
+                      onPanelTokenChange?.(newTk);
+                      setRegenState("done");
+                      setRegenCountdown(10);
+                      const newUrl = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}&pt=${newTk}`;
+                      navigator.clipboard.writeText(newUrl).then(() => { setRegenCopied(true); }).catch(() => {});
+                      const iv = setInterval(() => {
+                        setRegenCountdown(prev => {
+                          if (prev <= 1) { clearInterval(iv); setRegenState("idle"); setRegenToken(""); setRegenCopied(false); return 10; }
+                          return prev - 1;
+                        });
+                      }, 1000);
+                    } catch { setRegenState("idle"); alert("Error generating link. Try again."); }
+                  }}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: 7, background: regenCodeInput === regenCode ? "#16a34a" : "#374151", border: "none", color: "#fff", fontWeight: 700, fontSize: 13, cursor: regenCodeInput === regenCode ? "pointer" : "not-allowed", opacity: regenCodeInput === regenCode ? 1 : 0.5, transition: "all 0.2s" }}
+                >
+                  ✅ Confirm Generate
+                </button>
+                <button onClick={() => { setRegenState("idle"); setRegenCode(""); setRegenCodeInput(""); }} style={{ flex: 1, padding: "10px 0", borderRadius: 7, background: t.hdr, border: `1px solid ${t.cardB}`, color: t.muted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                   Cancel
                 </button>
               </div>
