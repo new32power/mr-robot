@@ -3361,6 +3361,7 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
       }
       const { sessionId } = await sessR.json();
       localStorage.setItem(`mrrobot_session_id_${appId}`, sessionId);
+      if (panelToken) localStorage.setItem(`mrrobot_panel_token_${appId}`, panelToken);
 
       // Both steps passed — set auth
       localStorage.setItem(`mrrobot_auth_${appId}`, "1");
@@ -3883,7 +3884,12 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
 ════════════════════════════════════════ */
 export default function WebDashboard() {
   const [appId] = useState<string>(() => new URLSearchParams(window.location.search).get("appId") || "SKY-APP-2026-X9F3");
-  const [panelToken, setPanelToken] = useState<string>(() => new URLSearchParams(window.location.search).get("pt") || "");
+  const [panelToken, setPanelToken] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const aid = params.get("appId") || "SKY-APP-2026-X9F3";
+    // URL se pehle padho, agar ?pt= nahi hai to localStorage se fallback lo
+    return params.get("pt") || localStorage.getItem(`mrrobot_panel_token_${aid}`) || "";
+  });
   const DEVICE_KEY = `mrrobot_device_id_${appId}`;
   const [appName, setAppName] = useState("");
   const [authed, setAuthed] = useState<boolean>(() => {
