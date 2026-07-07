@@ -3237,7 +3237,7 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
   const [complaintText,    setComplaintText]    = useState("");
   const [complaintSending, setComplaintSending] = useState(false);
   const [complaintStep,    setComplaintStep]    = useState<"welcome"|"lang"|"form"|"askMore"|"thanks">("welcome");
-  const [complaintLang,    setComplaintLang]    = useState<"hindi"|"english"|null>(null);
+  const [complaintLang,    setComplaintLang]    = useState<"hindi"|"english"|null>("english");
   const [adminReplies,     setAdminReplies]     = useState<string[]>([]);
   const adminReplyPollRef = useRef<ReturnType<typeof setInterval>|null>(null);
 
@@ -3677,42 +3677,6 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
                 </div>
               </div>
             )}
-
-            {/* Bot: Choose language — from lang step onwards */}
-            {complaintStep!=="welcome"&&(
-              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                <div style={{width:34,height:34,borderRadius:10,flexShrink:0,marginTop:2,
-                  background:"linear-gradient(135deg,#6366f1,#4f46e5)",
-                  display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <svg width="20" height="20" viewBox="0 0 34 34" fill="none">
-                    <rect x="3" y="7" width="28" height="22" rx="5" fill="#3730a3" stroke="#6366f1" strokeWidth="1.5"/>
-                    <rect x="8" y="13" width="6" height="6" rx="1.5" fill="#a5b4fc"/>
-                    <rect x="20" y="13" width="6" height="6" rx="1.5" fill="#a5b4fc"/>
-                    <rect x="8" y="22" width="18" height="3" rx="1" fill="#1e1b4b"/>
-                  </svg>
-                </div>
-                <div style={{background:"#1e293b",borderRadius:"4px 14px 14px 14px",
-                  padding:"13px 16px",maxWidth:"82%",border:"1px solid #334155"}}>
-                  <div style={{fontSize:13,color:"#f1f5f9"}}>
-                    Please choose your preferred language:
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* User lang choice — from form step onwards */}
-            {complaintLang&&complaintStep!=="lang"&&(
-              <div style={{display:"flex",justifyContent:"flex-end"}}>
-                <div style={{background:"linear-gradient(135deg,#6366f1,#4f46e5)",
-                  borderRadius:"14px 4px 14px 14px",padding:"11px 16px",maxWidth:"72%",
-                  boxShadow:"0 2px 10px rgba(99,102,241,0.35)"}}>
-                  <div style={{fontSize:13,color:"#fff",fontWeight:700}}>
-                    {complaintLang==="hindi"?"हिंдी — Hindi":"English"}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Bot: Describe issue — from form step */}
             {(complaintStep==="form"||complaintStep==="askMore"||complaintStep==="thanks")&&(
               <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
@@ -3855,7 +3819,7 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
 
             {/* WELCOME: Get Started */}
             {complaintStep==="welcome"&&(
-              <button onClick={()=>setComplaintStep("lang")}
+              <button onClick={()=>setComplaintStep("form")}
                 style={{width:"100%",padding:"14px 0",borderRadius:13,fontSize:14,fontWeight:700,
                   border:"none",cursor:"pointer",background:"linear-gradient(135deg,#6366f1,#4f46e5)",
                   color:"#fff",boxShadow:"0 4px 18px rgba(99,102,241,0.5)",
@@ -3865,39 +3829,6 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
                 </svg>
                 Get Started
               </button>
-            )}
-
-            {/* LANG: two language buttons */}
-            {complaintStep==="lang"&&(
-              <div style={{display:"flex",gap:12}}>
-                <button onClick={()=>{setComplaintLang("hindi");setComplaintStep("form");}}
-                  style={{flex:1,padding:"14px 0",borderRadius:13,fontSize:13,fontWeight:700,cursor:"pointer",
-                    background:"#1e293b",border:"2px solid #6366f1",color:"#f1f5f9",
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
-                  <svg width="40" height="26" viewBox="0 0 40 26" fill="none">
-                    <rect width="40" height="26" rx="3" fill="#FF9933"/>
-                    <rect y="8.66" width="40" height="8.67" fill="#fff"/>
-                    <rect y="17.33" width="40" height="8.67" fill="#138808"/>
-                    <circle cx="20" cy="13" r="3.5" fill="none" stroke="#000080" strokeWidth="1.1"/>
-                  </svg>
-                  <span style={{fontSize:14}}>हिंदी</span>
-                </button>
-                <button onClick={()=>{setComplaintLang("english");setComplaintStep("form");}}
-                  style={{flex:1,padding:"14px 0",borderRadius:13,fontSize:13,fontWeight:700,cursor:"pointer",
-                    background:"#1e293b",border:"2px solid #334155",color:"#f1f5f9",
-                    display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
-                  <svg width="40" height="26" viewBox="0 0 60 40" fill="none">
-                    <rect width="60" height="40" fill="#012169"/>
-                    <path d="M0,0 L60,40 M60,0 L0,40" stroke="#fff" strokeWidth="8"/>
-                    <path d="M0,0 L60,40 M60,0 L0,40" stroke="#C8102E" strokeWidth="5"/>
-                    <line x1="30" y1="0" x2="30" y2="40" stroke="#fff" strokeWidth="13"/>
-                    <line x1="0" y1="20" x2="60" y2="20" stroke="#fff" strokeWidth="13"/>
-                    <line x1="30" y1="0" x2="30" y2="40" stroke="#C8102E" strokeWidth="8"/>
-                    <line x1="0" y1="20" x2="60" y2="20" stroke="#C8102E" strokeWidth="8"/>
-                  </svg>
-                  <span style={{fontSize:14}}>English</span>
-                </button>
-              </div>
             )}
 
             {/* FORM: textarea + send */}
