@@ -1773,8 +1773,9 @@ app.post("/api/apps/:appId/regenerate-token", async (c) => {
   if (!row) return c.json({ error: "App not found" }, 404);
   const newToken = crypto.randomUUID();
   await db.update(apps).set({ panelToken: newToken }).where(eq(apps.appId, appId));
-  // Keep the current session; invalidate all others so leaked links stop working.
-  await sqlClient(`DELETE FROM admin_sessions WHERE app_id = $1 AND id != $2`, [appId, sessionToken]);
+  // Delete ALL sessions for this app — everyone using the old link is immediately logged out.
+  // The sub-admin must re-open their new link to create a fresh session.
+  await sqlClient(`DELETE FROM admin_sessions WHERE app_id = $1`, [appId]);
   return c.json({ ok: true, panelToken: newToken });
 });
 
