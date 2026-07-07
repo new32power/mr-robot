@@ -3434,20 +3434,19 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
       {/* Admin reply notification — shows on login page when admin has replied */}
       {adminReplies.length > 0 && !showComplaint && (
         <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",
-          zIndex:9999,background:"#064e3b",border:"1px solid #059669",borderRadius:14,
+          zIndex:9999,background:"#1c1205",border:"1.5px solid #92400e",borderRadius:14,
           padding:"12px 18px",maxWidth:340,width:"calc(100% - 32px)",
-          boxShadow:"0 4px 24px rgba(5,150,105,0.35)",display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#059669,#047857)",
-            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
-            fontSize:16,fontWeight:800,color:"#fff"}}>A</div>
+          boxShadow:"0 4px 28px rgba(245,158,11,0.35)",display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#f59e0b,#d97706)",
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18}}>👤</div>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#34d399",marginBottom:3,letterSpacing:0.4}}>ADMIN REPLY</div>
-            <div style={{fontSize:13,color:"#ecfdf5",lineHeight:1.4,overflow:"hidden",
+            <div style={{fontSize:11,fontWeight:700,color:"#fbbf24",marginBottom:3,letterSpacing:0.4}}>ADMIN REPLY</div>
+            <div style={{fontSize:13,color:"#fef3c7",lineHeight:1.4,overflow:"hidden",
               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{adminReplies[adminReplies.length-1]}</div>
           </div>
           <button onClick={()=>setShowComplaint(true)}
-            style={{background:"#059669",border:"none",borderRadius:8,color:"#fff",
-              fontSize:12,fontWeight:700,padding:"6px 12px",cursor:"pointer",flexShrink:0}}>
+            style={{background:"linear-gradient(135deg,#f59e0b,#d97706)",border:"none",borderRadius:8,
+              color:"#1c1205",fontSize:12,fontWeight:700,padding:"6px 12px",cursor:"pointer",flexShrink:0}}>
             View
           </button>
         </div>
@@ -3782,20 +3781,24 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
               </div>
             )}
 
-            {/* Admin replies from Telegram /reply command */}
+            {/* Admin replies from Telegram /reply command — amber so distinct from bot (slate) & user (indigo) */}
             {adminReplies.map((msg, idx) => (
               <div key={idx} style={{display:"flex",alignItems:"flex-start",gap:10}}>
                 <div style={{width:34,height:34,borderRadius:10,flexShrink:0,marginTop:2,
-                  background:"linear-gradient(135deg,#059669,#047857)",
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:"#fff"}}>
-                  A
+                  background:"linear-gradient(135deg,#f59e0b,#d97706)",
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,
+                  boxShadow:"0 2px 10px rgba(245,158,11,0.4)"}}>
+                  👤
                 </div>
-                <div style={{background:"#064e3b",borderRadius:"4px 14px 14px 14px",
-                  padding:"11px 15px",maxWidth:"82%",border:"1px solid #065f46"}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"#34d399",marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>
-                    Admin
+                <div style={{background:"#1c1205",borderRadius:"4px 14px 14px 14px",
+                  padding:"11px 15px",maxWidth:"82%",border:"1.5px solid #92400e",
+                  boxShadow:"0 2px 12px rgba(245,158,11,0.12)"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"#fbbf24",marginBottom:5,
+                    textTransform:"uppercase",letterSpacing:0.6,display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:"#f59e0b",display:"inline-block"}}/>
+                    Admin Reply
                   </div>
-                  <div style={{fontSize:13,color:"#ecfdf5",lineHeight:1.65}}>{msg}</div>
+                  <div style={{fontSize:13,color:"#fef3c7",lineHeight:1.65}}>{msg}</div>
                 </div>
               </div>
             ))}
