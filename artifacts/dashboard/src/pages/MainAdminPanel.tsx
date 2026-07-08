@@ -51,9 +51,10 @@ type MasterSession = {
 };
 
 function generateAppId() {
-  const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const s = (n: number) => Array.from({ length: n }, () => c[Math.floor(Math.random() * c.length)]).join("");
-  return `APP-${s(4)}-${s(4)}-${s(4)}`;
+  const U = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const mix = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const pick = (set: string, n: number) => Array.from({ length: n }, () => set[Math.floor(Math.random() * set.length)]).join("");
+  return pick(U, 3) + pick(mix, 12);
 }
 function fmtAgo(iso: string | null | undefined): string {
   if (!iso) return "Never";
