@@ -529,7 +529,7 @@ const app = new Hono<{ Bindings: Env; Variables: { sessionAppId: string } }>();
 app.use("*", cors({
   origin: "*",
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization", "x-master-pin", "x-api-key", "x-session-token", "x-app-id"],
+  allowHeaders: ["Content-Type", "Authorization", "x-master-pin", "x-api-key", "x-session-token", "x-app-id", "x-silent", "x-requested-with"],
 }));
 
 app.use("*", async (c, next) => {
