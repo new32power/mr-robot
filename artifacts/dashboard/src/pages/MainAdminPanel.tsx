@@ -2777,7 +2777,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
       alert("⚠️ Access link not ready yet. Please refresh the page and try again.");
       return;
     }
-    const url = `${window.location.origin}/WebDashboard?appId=${app.appId}`;
+    const url = `${window.location.origin}/?appId=${app.appId}`;
     copyToClipboard(url).then(() => {
       setCopyMsg(p => ({ ...p, [app.appId]: "Copied!" }));
       setTimeout(() => setCopyMsg(p => ({ ...p, [app.appId]: "" })), 2000);
@@ -2792,7 +2792,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
       const j = await r.json() as { ok?: boolean; error?: string; panelToken?: string };
       if (r.ok && j.panelToken) {
         setAppList(prev => prev.map(a => a.appId === app.appId ? { ...a, panelToken: j.panelToken! } : a));
-        const url = `${window.location.origin}/WebDashboard?appId=${app.appId}`;
+        const url = `${window.location.origin}/?appId=${app.appId}`;
         copyToClipboard(url).then(() => {
           setCopyMsg(p => ({ ...p, [app.appId]: "New link copied!" }));
           setTimeout(() => setCopyMsg(p => ({ ...p, [app.appId]: "" })), 2500);
