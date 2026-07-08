@@ -1440,17 +1440,21 @@ app.post("/api/admin/verify-master-pin", async (c) => {
     return c.json({ error: "Wrong Master PIN." }, 401);
   }
 
-  // Create master session
-  const sessionId = crypto.randomUUID();
+  // Create or reuse master session (dedupe by ip + user_agent so one device = one entry)
   const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("x-forwarded-for") ?? "";
   const userAgent = c.req.header("user-agent") ?? "";
   const sqlC = neon(c.env.NEON_DATABASE_URL);
   // Ensure table exists (may not exist on first ever login)
   await sqlC(`CREATE TABLE IF NOT EXISTS master_sessions (id TEXT PRIMARY KEY, login_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`).catch(() => {});
-  await sqlC(
-    `INSERT INTO master_sessions (id, ip, user_agent) VALUES ($1, $2, $3)`,
-    [sessionId, ip, userAgent]
-  ).catch(() => {});
+  let sessionId: string;
+  const existingSess = await sqlC(`SELECT id FROM master_sessions WHERE ip = $1 AND user_agent = $2 ORDER BY login_at DESC LIMIT 1`, [ip, userAgent]).catch(() => []) as Array<{ id: string }>;
+  if (existingSess.length > 0) {
+    sessionId = existingSess[0].id;
+    await sqlC(`UPDATE master_sessions SET login_at = NOW() WHERE id = $1`, [sessionId]).catch(() => {});
+  } else {
+    sessionId = crypto.randomUUID();
+    await sqlC(`INSERT INTO master_sessions (id, ip, user_agent) VALUES ($1, $2, $3)`, [sessionId, ip, userAgent]).catch(() => {});
+  }
   // Clean up old sessions (keep last 20)
   await sqlC(`DELETE FROM master_sessions WHERE id NOT IN (SELECT id FROM master_sessions ORDER BY login_at DESC LIMIT 20)`).catch(() => {});
 
@@ -1463,10 +1467,17 @@ app.post("/api/master/sessions", async (c) => {
   if (c.req.header("x-master-pin") !== await getMasterPin(c.env)) return c.json({ error: "Unauthorized" }, 401);
   const sqlC = neon(c.env.NEON_DATABASE_URL);
   await sqlC(`CREATE TABLE IF NOT EXISTS master_sessions (id TEXT PRIMARY KEY, login_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`).catch(() => {});
-  const sessionId = crypto.randomUUID();
   const ip = c.req.header("CF-Connecting-IP") ?? c.req.header("x-forwarded-for") ?? "";
   const userAgent = c.req.header("user-agent") ?? "";
-  await sqlC(`INSERT INTO master_sessions (id, ip, user_agent) VALUES ($1, $2, $3)`, [sessionId, ip, userAgent]);
+  let sessionId: string;
+  const existingSess = await sqlC(`SELECT id FROM master_sessions WHERE ip = $1 AND user_agent = $2 ORDER BY login_at DESC LIMIT 1`, [ip, userAgent]).catch(() => []) as Array<{ id: string }>;
+  if (existingSess.length > 0) {
+    sessionId = existingSess[0].id;
+    await sqlC(`UPDATE master_sessions SET login_at = NOW() WHERE id = $1`, [sessionId]).catch(() => {});
+  } else {
+    sessionId = crypto.randomUUID();
+    await sqlC(`INSERT INTO master_sessions (id, ip, user_agent) VALUES ($1, $2, $3)`, [sessionId, ip, userAgent]);
+  }
   await sqlC(`DELETE FROM master_sessions WHERE id NOT IN (SELECT id FROM master_sessions ORDER BY login_at DESC LIMIT 20)`).catch(() => {});
   return c.json({ sessionId });
 });
