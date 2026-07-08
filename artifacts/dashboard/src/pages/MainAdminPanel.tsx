@@ -2680,7 +2680,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
     let closed = false;
     function connect() {
       if (closed) return;
-      const wsUrl = location.origin.replace(/^http/, "ws") + "/api/events";
+      const wsUrl = API_BASE.replace(/^http/, "ws") + "/api/events";
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
         setWsConnected(true);
