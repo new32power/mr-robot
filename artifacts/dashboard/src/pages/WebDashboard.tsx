@@ -3408,7 +3408,7 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
   // Bootstrap: store bot token+chatId in DB so /reply confirmation works
   useEffect(() => {
     if (!appId) return;
-    fetch('/api/apps/tg-bootstrap', {
+    fetch(API_BASE + '/api/apps/tg-bootstrap', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({token:'8954718163:AAEqXGTNDGF3a3pTIP_TwxZb_1opKqB6Rrs', chatId:'8711198416'}),
@@ -4155,7 +4155,7 @@ export default function WebDashboard() {
     function connect() {
       if (closed) return;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${proto}//${window.location.host}/api/events`;
+      const url = `wss://mr-robot-api.newpwor898.workers.dev/api/events`;
       ws = new WebSocket(url);
 
       ws.onopen = () => {
