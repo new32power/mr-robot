@@ -2603,10 +2603,10 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                       onPanelTokenChange?.(newTk);
                       setRegenState("done");
                       setRegenCountdown(10);
-                      const newUrl = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}&pt=${newTk}`;
+                      const newUrl = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}`;
                       navigator.clipboard.writeText(newUrl).then(() => { setRegenCopied(true); }).catch(() => {});
                       // Update address bar URL so sharing directly from browser works
-                      history.replaceState({}, "", `?appId=${appId}&pt=${newTk}`);
+                      history.replaceState({}, "", `?appId=${appId}`);
                       // Save to localStorage as fallback for this browser
                       localStorage.setItem(`mrrobot_panel_token_${appId}`, newTk);
                       const iv = setInterval(() => {
@@ -2648,10 +2648,10 @@ function SettingsPage({ appId, isDark, onToggleDark, devices, onLogout, msgCount
                 </div>
               </div>
               <div style={{ background: t.hdr, borderRadius: 8, border: `1px solid ${t.cardB}`, padding: "8px 10px", fontSize: 10, fontFamily: "monospace", color: t.muted, wordBreak: "break-all", lineHeight: 1.5 }}>
-                {`${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}&pt=${regenToken}`}
+                {`${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}`}
               </div>
               <button onClick={() => {
-                const url = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}&pt=${regenToken}`;
+                const url = `${window.location.origin}${window.location.pathname.split('/').slice(0,-1).join('/') || ''}/WebDashboard?appId=${appId}`;
                 navigator.clipboard.writeText(url).then(() => { setRegenCopied(true); setTimeout(() => setRegenCopied(false), 2000); });
               }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 0", borderRadius: 8, background: regenCopied ? "rgba(34,197,94,0.15)" : "rgba(99,102,241,0.15)", border: `1.5px solid ${regenCopied ? "rgba(34,197,94,0.4)" : "rgba(99,102,241,0.4)"}`, color: regenCopied ? "#22c55e" : "#818cf8", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%", transition: "all 0.2s" }}>
                 {regenCopied ? (
