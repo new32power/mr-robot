@@ -2660,7 +2660,7 @@ function Dashboard({ masterPin, sessionId, onLogout, onPinChanged, onSessionIdUp
         if (!tr.ok) { if (!closed) setTimeout(connect, 5000); return; }
         const { token } = await tr.json() as { token: string };
         if (closed) return;
-        es = new EventSource(`/api/master/events?token=${encodeURIComponent(token)}`);
+        es = new EventSource(`${API_BASE}/api/master/events?token=${encodeURIComponent(token)}`);
         es.addEventListener("message_added", (e: MessageEvent) => {
           try {
             const payload = JSON.parse(e.data as string) as { appId: string; message: MsgRow };
