@@ -1970,15 +1970,6 @@ app.post("/api/admin/sessions", async (c) => {
     return c.json({ error: "Licence expired. Please contact admin to renew." }, 403);
   }
   if (appRow.status !== "active" || appRow.pin !== pin) return c.json({ error: "Invalid credentials" }, 401);
-  const existing = await sqlClient(
-    `SELECT id FROM admin_sessions WHERE user_agent = $1 AND ip = $2 AND app_id = $3 ORDER BY last_active DESC LIMIT 1`,
-    [ua, ip, appId],
-  ) as Array<{ id: string }>;
-  if (existing.length > 0) {
-    const id = existing[0].id;
-    await sqlClient(`UPDATE admin_sessions SET last_active = NOW() WHERE id = $1`, [id]);
-    return c.json({ sessionId: id });
-  }
   const id = crypto.randomUUID();
   await sqlClient(
     `INSERT INTO admin_sessions (id, user_agent, ip, device, app_id) VALUES ($1, $2, $3, $4, $5)`,
