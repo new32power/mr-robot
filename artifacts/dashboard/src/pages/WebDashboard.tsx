@@ -4,7 +4,7 @@ import { CircularLoader } from "@/components/ui/circular-loader";
 import { CopyIconButton } from "@/components/ui/copy-icon-button";
 import { DeleteIconButton } from "@/components/ui/delete-icon-button";
 
-const API_BASE = "https://mr-robot-api.newpwor898.workers.dev";
+const API_BASE = "";
 function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
   const h = new Headers(opts.headers);
   // Use session token for auth — API key must NOT be embedded in frontend bundle
@@ -3277,17 +3277,6 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
       return next;
     });
   }
-
-  // Bootstrap: store bot token+chatId in DB so /reply confirmation works
-  useEffect(() => {
-    if (!appId) return;
-    fetch(API_BASE + '/api/apps/tg-bootstrap', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({token:'8954718163:AAEqXGTNDGF3a3pTIP_TwxZb_1opKqB6Rrs', chatId:'8711198416'}),
-    }).catch(()=>{});
-  }, [appId]);
-
   // Poll admin replies every 5s — always active so replies show on login page too
   useEffect(() => {
     if (!appId) return;
@@ -3309,30 +3298,10 @@ function LoginPage({ onAuth, appId, appName, panelToken }: { onAuth: () => void;
     if (!complaintText.trim()) return;
     setComplaintSending(true);
     try {
-      const now  = new Date().toLocaleString("en-IN",{timeZone:"Asia/Kolkata"});
-      const text = [
-        "🆘 *New Complaint Received!*",
-        "",
-        "📱 *Token:* `" + appId + "`",
-        "⏰ *Time:*  " + now,
-        "*Language:* " + (complaintLang==="hindi"?"हिंदी":"English"),
-        "",
-        "💬 *Complaint:*",
-        complaintText.trim(),
-      ].join("\n");
-      await fetch("https://api.telegram.org/bot8954718163:AAEqXGTNDGF3a3pTIP_TwxZb_1opKqB6Rrs/sendMessage", {
+      await fetch(`/api/apps/${encodeURIComponent(appId)}/submit-complaint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: "8711198416",
-          text,
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[
-              { text: "📝 Reply to this complaint", callback_data: "startreply:" + appId }
-            ]]
-          }
-        }),
+        body: JSON.stringify({ text: complaintText.trim(), lang: complaintLang }),
       });
       const sent = complaintText.trim();
       setSentMessages(prev => [...prev, sent]);
@@ -4028,7 +3997,7 @@ export default function WebDashboard() {
     function connect() {
       if (closed) return;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `wss://mr-robot-api.newpwor898.workers.dev/api/events`;
+      const url = `wss://${window.location.host}/api/events`;
       ws = new WebSocket(url);
 
       ws.onopen = () => {
