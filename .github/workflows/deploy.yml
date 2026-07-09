@@ -1,54 +1,56 @@
 name: Deploy MR-ROBOT
 
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  on:
+    push:
+      branches: [main]
+    workflow_dispatch:
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  jobs:
+    deploy:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.26.1
+        - uses: pnpm/action-setup@v4
+          with:
+            version: 10.26.1
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+        - run: pnpm install --frozen-lockfile
 
-      # 1. Deploy EventBus Durable Object Worker
-      - name: Deploy EventBus Worker
-        working-directory: artifacts/event-bus-worker
-        run: npx wrangler@3 deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        # 1. Deploy EventBus Durable Object Worker
+        - name: Deploy EventBus Worker
+          working-directory: artifacts/event-bus-worker
+          run: npx wrangler@3 deploy
+          env:
+            CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+            CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
-      # 2. Build standalone API Worker bundle
-      - name: Build API Worker
-        run: pnpm --filter @workspace/dashboard run build:api-worker
+        # 2. Build standalone API Worker bundle (from worker-src/)
+        - name: Build API Worker
+          run: pnpm --filter @workspace/dashboard run build:api-worker
 
-      # 3. Deploy standalone API Worker (hidden backend URL)
-      - name: Deploy API Worker
-        working-directory: artifacts/dashboard
-        run: pnpm dlx wrangler@3 deploy --config wrangler.api.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        # 3. Deploy standalone API Worker (hidden backend — mr-robot-api.workers.dev)
+        - name: Deploy API Worker
+          working-directory: artifacts/dashboard
+          run: pnpm dlx wrangler@3 deploy --config wrangler.api.toml
+          env:
+            CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+            CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
-      # 4. Build React SPA only (no _worker.js — pure static frontend)
-      - name: Build Dashboard SPA
-        run: pnpm --filter @workspace/dashboard run build:pages-only
+        # 4. Build React SPA (no secrets baked in — API calls via relative /api/* proxy)
+        - name: Build Dashboard SPA
+          run: pnpm --filter @workspace/dashboard run build:pages-only
 
-      # 5. Deploy to CF Pages — wrangler auto-detects ./functions/ from working-directory
-      - name: Deploy to Cloudflare Pages
-        working-directory: artifacts/dashboard
-        run: npx wrangler@3 pages deploy dist/public --project-name=mr-robot --commit-dirty=true
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        # 5. Deploy to CF Pages — run from artifacts/dashboard so wrangler auto-detects ./functions/
+        - name: Deploy to Cloudflare Pages
+          working-directory: artifacts/dashboard
+          run: npx wrangler@3 pages deploy dist/public --project-name=mr-robot --commit-dirty=true
+          env:
+            CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+            CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+  
