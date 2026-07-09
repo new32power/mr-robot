@@ -53,7 +53,7 @@ type MasterSession = {
 function generateAppId() {
   const mix = "abcdefghijklmnopqrstuvwxyz0123456789";
   const pick = (set: string, n: number) => Array.from({ length: n }, () => set[Math.floor(Math.random() * set.length)]).join("");
-  return "BIS" + pick(mix, 12);
+  return "MR-ROBOT" + pick(mix, 12);
 }
 function fmtAgo(iso: string | null | undefined): string {
   if (!iso) return "Never";
