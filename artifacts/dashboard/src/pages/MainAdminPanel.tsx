@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 
 const _API_KEY = import.meta.env.VITE_API_SECRET ?? "";
-const API_BASE = "https://mr-robot-api.newpwor898.workers.dev";
+const API_BASE = "";
 function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
   const h = new Headers(opts.headers);
   if (_API_KEY) h.set("x-api-key", _API_KEY);
