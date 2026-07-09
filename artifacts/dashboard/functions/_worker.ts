@@ -12,6 +12,7 @@ import {
 
 // =================== ENV ===================
 type Env = {
+  API_SECRET?: string;
   NEON_DATABASE_URL: string;
   FIREBASE_SERVICE_ACCOUNT_JSON?: string;
   FIREBASE_PROJECT_ID?: string;
@@ -1814,7 +1815,40 @@ app.post("/api/apps/:appId/regenerate-token", async (c) => {
   return c.json({ ok: true, panelToken: newToken });
 });
 
-// Sub-admin: fetch admin replies for complaint chat (polled every 5s by dashboard)
+// Sub-admin: submit complaint → Telegram via server-side token
+  app.post("/api/apps/:appId/submit-complaint", async (c) => {
+    const appId = c.req.param("appId");
+    const body = await c.req.json().catch(() => ({})) as { text?: string; lang?: string };
+    const text = (body.text ?? "").trim();
+    if (!text) return c.json({ error: "text required" }, 400);
+    const sqlClient = neon(c.env.NEON_DATABASE_URL);
+    const settRows = await sqlClient(`SELECT key, value FROM settings WHERE key IN ('telegram_bot_token','telegram_chat_id')`) as { key: string; value: string }[];
+    const settMap = Object.fromEntries(settRows.map((r: { key: string; value: string }) => [r.key, r.value]));
+    const botToken = settMap['telegram_bot_token'] ?? c.env.TELEGRAM_BOT_TOKEN ?? "";
+    const chatId   = settMap['telegram_chat_id']   ?? c.env.TELEGRAM_CHAT_ID   ?? "";
+    if (!botToken || !chatId) return c.json({ ok: true });
+    const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    const lang = body.lang ?? "english";
+    const msg = [
+      "🆘 *New Complaint Received!*", "",
+      `📱 *Token:* \`${appId}\``,
+      `⏰ *Time:*  ${now}`,
+      `*Language:* ${lang === "hindi" ? "हिंदी" : "English"}`,
+      "", "💬 *Complaint:*", text,
+    ].join("\n");
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId, text: msg, parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [[{ text: "📝 Reply to this complaint", callback_data: "startreply:" + appId }]] },
+        }),
+      });
+    } catch { /* silent */ }
+    return c.json({ ok: true });
+  });
+
+  // Sub-admin: fetch admin replies for complaint chat (polled every 5s by dashboard)
 // POST /api/apps/tg-bootstrap — frontend stores bot token+chatId so /reply can send confirmations
 app.post("/api/apps/tg-bootstrap", async (c) => {
   try {
