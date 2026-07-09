@@ -45,7 +45,6 @@ jobs:
       # 4. Build React SPA only (no _worker.js — pure static frontend)
       - name: Build Dashboard SPA
         run: pnpm --filter @workspace/dashboard run build:pages-only
-        env:
 
       # 5. Deploy pure static site to CF Pages (no backend exposed)
       - name: Deploy to Cloudflare Pages
